@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "patterns": [
+    {
+      "type": "keyword",
+      "value": "example_adult_term_1",
+      "severity": "high"
+    },
+    {
+      "type": "keyword",
+      "value": "example_adult_term_2",
+      "severity": "medium"
+    }
+  ],
+  "allowlist": [
+    "medical_term",
+    "educational_term"
+  ]
+}
