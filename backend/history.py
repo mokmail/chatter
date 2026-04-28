@@ -514,16 +514,18 @@ def search_history(query: str, search_type: str = "all", limit: int = 20) -> lis
                     snippet = f"Tag: {tag}"
                     break
 
-        # Search in message content
+        # Search in message content (prompts and responses)
         if search_type in ("all", "content"):
-            for msg in session.messages:
+            for msg_idx, msg in enumerate(session.messages):
                 if not msg.content:
                     continue
                 content_lower = msg.content.lower()
+                is_response = msg.role == "assistant"
+
                 if query_lower in content_lower:
-                    relevance_score = max(relevance_score, 0.7)
-                    match_type = "content"
-                    # Extract snippet around match
+                    base_score = 0.75 if is_response else 0.7
+                    relevance_score = max(relevance_score, base_score)
+                    match_type = "response" if is_response else "prompt"
                     idx = content_lower.find(query_lower)
                     start = max(0, idx - 50)
                     end = min(len(msg.content), idx + len(query) + 100)
@@ -532,12 +534,22 @@ def search_history(query: str, search_type: str = "all", limit: int = 20) -> lis
                         snippet = "..." + snippet
                     if end < len(msg.content):
                         snippet = snippet + "..."
+                    if is_response:
+                        snippet = f"[Assistant] {snippet}"
+                    else:
+                        snippet = f"[You] {snippet}"
+                    result_msg_idx = msg_idx
                     break
-                # Also check for partial word matches
                 elif any(word.startswith(query_lower) for word in content_lower.split()[:10]):
-                    relevance_score = max(relevance_score, 0.5)
-                    match_type = "content"
+                    base_score = 0.55 if is_response else 0.5
+                    relevance_score = max(relevance_score, base_score)
+                    match_type = "response" if is_response else "prompt"
                     snippet = msg.content[:150] + "..." if len(msg.content) > 150 else msg.content
+                    if is_response:
+                        snippet = f"[Assistant] {snippet}"
+                    else:
+                        snippet = f"[You] {snippet}"
+                    result_msg_idx = msg_idx
                     break
 
         if relevance_score > 0:
@@ -550,6 +562,8 @@ def search_history(query: str, search_type: str = "all", limit: int = 20) -> lis
                 "match_type": match_type,
                 "relevance_score": relevance_score,
                 "timestamp": session.updated_at,
+                "message_index": result_msg_idx if search_type in ("all", "content") else None,
+                "query": query,
             })
 
     # Sort by relevance

@@ -176,10 +176,7 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
               <span className="truncate max-w-[120px]">{item.name}</span>
               <button
                 type="button"
-                onClick={() => {
-                  if (item.type === 'file') setAttachments(prev => ({ ...prev, files: prev.files.filter((_, i) => i !== item.index) }))
-                  if (item.type === 'note') setAttachments(prev => ({ ...prev, notes: prev.notes.filter((_, i) => i !== item.index) }))
-                }}
+                onClick={() => removeAttachment(item.id)}
                 className="p-1 rounded-lg hover:bg-red-500/10 text-[var(--text-tertiary)] hover:text-red-500 transition-all"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3 h-3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>

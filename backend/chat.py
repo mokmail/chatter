@@ -207,66 +207,20 @@ async def _list_openai_models(base_url: str, api_key: str) -> list[str]:
 
 
 async def embed_text(text: str, provider_id: str | None = None, model: str | None = None) -> list[float]:
-    """Get embeddings for a piece of text."""
+    """Get embeddings for a piece of text via LangChain's embedding interface."""
+    from vectorstore import ProviderEmbeddings
+
     cfg = get_config()
-    
-    provider = None
+
     if provider_id:
         provider = next((p for p in cfg.providers if p.id == provider_id), None)
-    
-    if not provider and cfg.active_provider_id:
+    elif cfg.active_provider_id:
         provider = next((p for p in cfg.providers if p.id == cfg.active_provider_id), None)
-        
-    if not provider:
-        if cfg.providers:
-            provider = cfg.providers[0]
-        else:
-            raise ValueError("No providers configured")
-
-    if not model:
-        model = "nomic-embed-text" if provider.type == "ollama" else "text-embedding-3-small"
-
-    if provider.type == "ollama":
-        return await _embed_ollama(provider.base_url, model, text)
-    elif provider.type == "openai":
-        return await _embed_openai(provider.base_url, provider.api_key, model, text)
     else:
-        raise ValueError(f"Provider {provider.type} does not support embeddings yet")
+        provider = cfg.providers[0] if cfg.providers else None
 
+    if not provider:
+        raise ValueError("No providers configured")
 
-async def _embed_ollama(base_url: str, model: str, text: str) -> list[float]:
-    """Get embeddings from Ollama."""
-    url = f"{base_url}/api/embed"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            resp = await client.post(url, json={"model": model, "input": text})
-            if resp.status_code == 404:
-                url = f"{base_url}/api/embeddings"
-                resp = await client.post(url, json={"model": model, "prompt": text})
-            
-            resp.raise_for_status()
-            data = resp.json()
-            
-            if "embeddings" in data:
-                return data["embeddings"][0]
-            return data.get("embedding", [])
-        except Exception as e:
-            print(f"Error embedding with Ollama: {e}")
-            raise
-
-
-async def _embed_openai(base_url: str, api_key: str, model: str, text: str) -> list[float]:
-    """Get embeddings from OpenAI-compatible API."""
-    url = f"{base_url}/embeddings"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    emb_model = "text-embedding-3-small" if "gpt" in model.lower() and "openai.com" in base_url else model
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            url,
-            json={"model": emb_model, "input": text},
-            headers=headers
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("data", [{}])[0].get("embedding", [])
+    embeddings = ProviderEmbeddings(provider_id=provider.id, model=model)
+    return embeddings.embed_query(text)

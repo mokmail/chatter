@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import {
   NotesIcon,
   FileIcon,
@@ -439,8 +443,375 @@ const FileItem = ({ file, onDelete, onView }) => {
   )
 }
 
-const FilePreviewModal = ({ file, content, onClose }) => {
-  if (!file) return null
+const EmbeddingStatsPanel = ({ stats }) => {
+  const { charCount, wordCount, tokenCount, lineCount, chunkCount, chunkSize, embeddingModel } = stats
+  
+  return (
+    <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{charCount?.toLocaleString() || 0}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Characters</div>
+      </div>
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{wordCount?.toLocaleString() || 0}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Words</div>
+      </div>
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{lineCount?.toLocaleString() || 0}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Lines</div>
+      </div>
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{chunkCount || 0}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chunks</div>
+      </div>
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{chunkSize || 1000}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chunk Size</div>
+      </div>
+      <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="text-lg font-bold truncate" style={{ color: 'var(--accent)' }}>{embeddingModel || 'nomic-embed-text'}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Embedding Model</div>
+      </div>
+    </div>
+  )
+}
+
+const ChunkMapVisualizer = ({ content, chunkSize = 1000, chunkOverlap = 100 }) => {
+  if (!content) return null
+  
+  const chunks = []
+  for (let i = 0; i < content.length; i += chunkSize - chunkOverlap) {
+    chunks.push({
+      start: i,
+      end: Math.min(i + chunkSize, content.length),
+      text: content.slice(i, Math.min(i + chunkSize, content.length))
+    })
+    if (i + chunkSize >= content.length) break
+  }
+  
+  const totalLength = content.length
+  const colors = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#ef4444', '#f97316', '#eab308', '#84cc16']
+  
+  return (
+    <div className="mb-4">
+      <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: 'var(--text-tertiary)' }}>Document Chunk Map</h4>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex-1 h-8 rounded-lg overflow-hidden flex" style={{ background: 'var(--bg-secondary)' }}>
+            {chunks.map((chunk, idx) => (
+              <div
+                key={idx}
+                className="relative group"
+                style={{
+                  width: `${(chunk.text.length / totalLength) * 100}%`,
+                  minWidth: '4px',
+                  backgroundColor: colors[idx % colors.length],
+                  opacity: 0.7 + (idx === 0 ? 0.3 : 0)
+                }}
+                title={`Chunk ${idx + 1}: ${chunk.start}-${chunk.end} (${chunk.text.length} chars)`}
+              >
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                  style={{ background: 'var(--text)', color: 'var(--bg)' }}>
+                  Chunk {idx + 1}: {chunk.start}-{chunk.end}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {chunks.map((chunk, idx) => (
+            <div key={idx} className="flex items-center gap-1.5 text-xs">
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: colors[idx % colors.length] }} />
+              <span style={{ color: 'var(--text-secondary)' }}>Ch {idx + 1}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const TermFrequencyChart = ({ content }) => {
+  if (!content) return null
+  
+  const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'whom', 'where', 'when', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'as', 'if', 'then', 'therefore', 'however', 'although', 'though', 'while', 'because', 'since', 'unless', 'until', 'after', 'before', 'about', 'into', 'through', 'during', 'above', 'below', 'between', 'under', 'again', 'further', 'once'])
+  
+  const words = content.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !stopWords.has(w))
+  
+  const freq = {}
+  words.forEach(w => { freq[w] = (freq[w] || 0) + 1 })
+  
+  const sorted = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+  
+  const maxFreq = sorted[0]?.[1] || 1
+  
+  return (
+    <div className="mb-4">
+      <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: 'var(--text-tertiary)' }}>Top Terms (TF)</h4>
+      <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="space-y-2">
+          {sorted.map(([word, count], idx) => (
+            <div key={word} className="flex items-center gap-3">
+              <span className="text-xs w-4 text-right" style={{ color: 'var(--text-tertiary)' }}>{idx + 1}</span>
+              <span className="text-xs w-24 truncate" style={{ color: 'var(--text-secondary)' }}>{word}</span>
+              <div className="flex-1 h-5 rounded overflow-hidden" style={{ background: 'var(--bg-secondary)' }}>
+                <div 
+                  className="h-full rounded transition-all"
+                  style={{ 
+                    width: `${(count / maxFreq) * 100}%`,
+                    background: `linear-gradient(90deg, var(--accent), ${idx < 3 ? '#d946ef' : 'var(--accent)'})`,
+                    opacity: 0.6 + (1 - idx / 15) * 0.4
+                  }}
+                />
+              </div>
+              <span className="text-xs w-8 text-right font-mono" style={{ color: 'var(--accent)' }}>{count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const ChunkNavigator = ({ chunks, onChunkSelect, selectedChunk }) => {
+  if (!chunks || chunks.length === 0) return null
+  
+  return (
+    <div className="mb-4">
+      <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: 'var(--text-tertiary)' }}>Chunk Navigator</h4>
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="max-h-64 overflow-y-auto">
+          {chunks.map((chunk, idx) => (
+            <div 
+              key={chunk.id || idx}
+              className="p-3 border-b cursor-pointer transition-colors"
+              style={{ 
+                borderColor: 'var(--border)',
+                background: selectedChunk === idx ? 'var(--accent-subtle)' : 'transparent'
+              }}
+              onClick={() => onChunkSelect?.(idx)}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'var(--accent)', color: '#fff' }}>
+                  {idx + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{chunk.content}</p>
+                  <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                    {chunk.metadata?.chunk_index !== undefined ? `Index: ${chunk.metadata.chunk_index} | ` : ''}{chunk.content?.length || 0} chars
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const FilePreviewModal = ({ file, content, embeddingsData, onClose }) => {
+  const [viewMode, setViewMode] = useState('preview')
+  const [deepViewTab, setDeepViewTab] = useState('stats')
+  const [selectedChunk, setSelectedChunk] = useState(null)
+  const [csvData, setCsvData] = useState({ headers: [], rows: [] })
+
+  const fileType = file?.file_type || ''
+  const fileName = file?.name || ''
+
+  const getFileCategory = (name, type) => {
+    const ext = name.split('.').pop()?.toLowerCase() || ''
+    const t = type?.toLowerCase() || ''
+    if (ext === 'md' || t.includes('markdown') || t.includes('md')) return 'markdown'
+    if (ext === 'csv' || t.includes('csv')) return 'csv'
+    if (ext === 'json' || t.includes('json')) return 'json'
+    if (ext === 'html' || ext === 'htm' || t.includes('html')) return 'html'
+    if (ext === 'pdf' || t.includes('pdf')) return 'pdf'
+    if (ext === 'doc' || ext === 'docx' || t.includes('word') || t.includes('document')) return 'doc'
+    if (ext === 'txt' || ext === 'text' || t.includes('text/plain')) return 'text'
+    if (['js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'sh', 'bash', 'yaml', 'yml', 'xml', 'sql'].includes(ext)) return 'code'
+    return 'text'
+  }
+
+  const category = getFileCategory(fileName, fileType)
+
+  useEffect(() => {
+    if (category === 'csv' && content) {
+      parseCSV(content)
+    }
+  }, [content, category])
+
+  const parseCSV = (text) => {
+    try {
+      const lines = text.split('\n').filter(l => l.trim())
+      if (lines.length === 0) { setCsvData({ headers: [], rows: [] }); return }
+      const delimiter = lines[0].includes('\t') ? '\t' : ','
+      const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''))
+      const rows = lines.slice(1).map(line =>
+        line.split(delimiter).map(cell => cell.trim().replace(/^["']|["']$/g, ''))
+      )
+      setCsvData({ headers, rows })
+    } catch {
+      setCsvData({ headers: [], rows: [] })
+    }
+  }
+
+  const detectLanguage = (name) => {
+    const ext = name.split('.').pop()?.toLowerCase() || ''
+    const langMap = {
+      py: 'python', js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+      rb: 'ruby', java: 'java', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+      css: 'css', scss: 'scss', sh: 'bash', bash: 'bash', yaml: 'yaml', yml: 'yaml',
+      xml: 'xml', sql: 'sql', json: 'json', md: 'markdown', txt: 'text'
+    }
+    return langMap[ext] || 'text'
+  }
+
+  const renderPreview = () => {
+    if (content === null) {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 animate-pulse">
+          <div className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+          <p className="mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading content...</p>
+        </div>
+      )
+    }
+
+    if (!content) {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mb-3 opacity-40">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 0H3m9 0h9m-9 0a9 9 0 01-9-9m9 9v9m0 0v-9m0 0H3m9 0h9" />
+          </svg>
+          No content available
+        </div>
+      )
+    }
+
+    if (category === 'csv') {
+      return (
+        <div className="overflow-auto rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr style={{ background: 'var(--accent-subtle)' }}>
+                {csvData.headers.map((h, i) => (
+                  <th key={i} className="px-4 py-3 text-left font-semibold whitespace-nowrap" style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {csvData.rows.map((row, i) => (
+                <tr key={i} className="even:bg-surface hover:bg-surface transition-colors" style={{ borderBottom: '1px solid var(--border)' }}>
+                  {row.map((cell, j) => (
+                    <td key={j} className="px-4 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{cell || <span style={{ color: 'var(--text-tertiary)' }}>—</span>}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {csvData.rows.length === 0 && (
+            <div className="text-center py-8 text-sm" style={{ color: 'var(--text-tertiary)' }}>No data rows found</div>
+          )}
+        </div>
+      )
+    }
+
+    if (category === 'markdown') {
+      return (
+        <div className="prose prose-sm max-w-none rounded-xl p-6" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        </div>
+      )
+    }
+
+    if (category === 'json') {
+      try {
+        const formatted = JSON.stringify(JSON.parse(content), null, 2)
+        return (
+          <pre className="text-xs font-mono whitespace-pre-wrap rounded-xl p-4 overflow-auto"
+            style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', maxHeight: '70vh' }}>
+            <code>{formatted}</code>
+          </pre>
+        )
+      } catch {
+        return <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4" style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>{content}</pre>
+      }
+    }
+
+    if (category === 'html') {
+      return (
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2 px-4 py-2 text-xs" style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 01-9-9m9 9a9 9 0 100-18m-9 9l-3-3m3 3l-3 3M3 12a9 9 0 1118 0 9 9 0 01-18 0z" /></svg>
+            HTML Preview
+          </div>
+          <iframe
+            srcDoc={content}
+            className="w-full bg-white"
+            style={{ height: '60vh', border: 'none' }}
+            title="HTML Preview"
+            sandbox="allow-same-origin"
+          />
+        </div>
+      )
+    }
+
+    if (category === 'pdf') {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-14 h-14 mb-4" style={{ color: 'var(--accent)' }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 0H3m9 0h9m-9 0a9 9 0 01-9-9m9 9v9m0 0v-9m0 0H3m9 0h9" />
+          </svg>
+          <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>PDF Document</p>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{content?.length || 0} characters extracted from PDF</p>
+          <pre className="mt-4 text-xs text-left whitespace-pre-wrap max-h-48 overflow-auto w-full px-4" style={{ color: 'var(--text-secondary)' }}>{content}</pre>
+        </div>
+      )
+    }
+
+    if (category === 'doc') {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-14 h-14 mb-4" style={{ color: 'var(--accent)' }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 0H3m9 0h9m-9 0a9 9 0 01-9-9m9 9v9m0 0v-9m0 0H3m9 0h9" />
+          </svg>
+          <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>Document</p>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{content?.length || 0} characters extracted</p>
+          <pre className="mt-4 text-xs text-left whitespace-pre-wrap max-h-48 overflow-auto w-full px-4" style={{ color: 'var(--text-secondary)' }}>{content}</pre>
+        </div>
+      )
+    }
+
+    if (category === 'code') {
+      return (
+        <div className="rounded-xl overflow-auto border" style={{ borderColor: 'var(--border)', background: '#1e1e1e', maxHeight: '70vh' }}>
+          <div className="flex items-center gap-2 px-4 py-2 text-xs border-b" style={{ background: '#2d2d2d', borderColor: '#3d3d3d' }}>
+            <span style={{ color: '#888' }}>{detectLanguage(fileName)}</span>
+          </div>
+          <SyntaxHighlighter
+            language={detectLanguage(fileName)}
+            style={vscDarkPlus}
+            customStyle={{ margin: 0, padding: '1rem', fontSize: '12px', background: 'transparent' }}
+            wrapLongLines={false}
+          >
+            {content}
+          </SyntaxHighlighter>
+        </div>
+      )
+    }
+
+    return (
+      <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4 overflow-auto"
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', maxHeight: '70vh' }}>
+        {content}
+      </pre>
+    )
+  }
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[60] animate-backdrop"
@@ -448,54 +819,152 @@ const FilePreviewModal = ({ file, content, onClose }) => {
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl flex flex-col animate-modal overflow-hidden"
         style={{ background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', boxShadow: 'var(--modal-shadow)' }}>
-        
+
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ background: 'var(--accent-subtle)' }}>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
+              {category === 'markdown' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              ) : category === 'csv' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-1.125h-1.5m1.5 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 8.25v-1.5m0 12.75c0 .621.504 1.125 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m17.25-1.125h1.5m1.5 0v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h1.5m14.25 0v-1.5" /></svg>
+              ) : category === 'code' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" /></svg>
+              ) : category === 'html' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 01-9-9m9 9a9 9 0 100-18m-9 9l-3-3m3 3l-3 3M3 12a9 9 0 1118 0 9 9 0 01-18 0z" /></svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6" style={{ color: 'var(--accent)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 0H3m9 0h9m-9 0a9 9 0 01-9-9m9 9v9m0 0v-9m0 0H3m9 0h9" />
+                </svg>
+              )}
             </div>
             <div>
               <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>{file.name}</h3>
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{file.file_type} · {content?.length || 0} characters</p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{category.toUpperCase()}</span>
+                <span className="ml-2">{content?.length || 0} characters</span>
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl transition-all duration-200"
-            style={{ color: 'var(--text-tertiary)' }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--text)' }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setViewMode(v => v === 'deep' ? 'preview' : 'deep')}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+              style={{ 
+                background: viewMode === 'deep' ? 'var(--accent)' : 'var(--surface)', 
+                color: viewMode === 'deep' ? '#fff' : 'var(--text-secondary)', 
+                border: '1px solid var(--border)' 
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+              Deep View
+            </button>
+            {(category === 'code' || category === 'markdown') && (
+              <button
+                onClick={() => setViewMode(v => v === 'preview' ? 'raw' : 'preview')}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{ background: 'var(--surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+              >
+                {viewMode === 'preview' ? 'Raw' : 'Preview'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl transition-all duration-200"
+              style={{ color: 'var(--text-tertiary)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--text)' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-grid">
-          {content === null ? (
-            <div className="flex flex-col items-center justify-center h-64 animate-pulse">
-              <div className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-              <p className="mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading content...</p>
-            </div>
-          ) : (
-            <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4"
-              style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+        <div className="flex-1 overflow-hidden p-6 bg-grid">
+          {viewMode === 'raw' ? (
+            <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4 overflow-auto"
+              style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', maxHeight: '70vh' }}>
               {content || 'No content available'}
             </pre>
-          )}
+          ) : viewMode === 'deep' ? (
+            <div className="h-full flex flex-col">
+              <div className="flex items-center gap-1 mb-4 p-1 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                {[
+                  { id: 'stats', label: 'Stats', icon: '📊' },
+                  { id: 'chunks', label: 'Chunks', icon: '🧩' },
+                  { id: 'visualization', label: 'Visualization', icon: '📈' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setDeepViewTab(tab.id)}
+                    className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5"
+                    style={{ 
+                      background: deepViewTab === tab.id ? 'var(--accent)' : 'transparent',
+                      color: deepViewTab === tab.id ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    <span>{tab.icon}</span>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex-1 overflow-auto">
+                {deepViewTab === 'stats' && (
+                  <div>
+                    <EmbeddingStatsPanel 
+                      stats={{
+                        charCount: content?.length || 0,
+                        wordCount: content?.split(/\s+/).filter(w => w).length || 0,
+                        tokenCount: Math.ceil((content?.length || 0) / 4),
+                        lineCount: content?.split('\n').length || 0,
+                        chunkCount: embeddingsData?.length || Math.ceil((content?.length || 0) / 1000),
+                        chunkSize: 1000,
+                        embeddingModel: 'nomic-embed-text'
+                      }}
+                    />
+                    <ChunkMapVisualizer content={content} />
+                  </div>
+                )}
+                
+                {deepViewTab === 'chunks' && (
+                  <ChunkNavigator 
+                    chunks={embeddingsData?.length > 0 ? embeddingsData : (content ? [{
+                      id: 'computed-1',
+                      content: content.slice(0, 1000)
+                    }] : [])}
+                    selectedChunk={selectedChunk}
+                    onChunkSelect={setSelectedChunk}
+                  />
+                )}
+                
+                {deepViewTab === 'visualization' && (
+                  <TermFrequencyChart content={content} />
+                )}
+              </div>
+            </div>
+          ) : renderPreview()}
         </div>
 
-        <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: 'var(--border)' }}>
+        <div className="px-6 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--border)' }}>
+          <a
+            href={`data:text/plain;charset=utf-8,${encodeURIComponent(content || '')}`}
+            download={file.name}
+            className="px-5 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-90"
+            style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          >
+            Download
+          </a>
           <button
             onClick={onClose}
             className="px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
             style={{ background: 'var(--user-bubble-bg)', color: '#ffffff', boxShadow: 'var(--user-bubble-shadow)' }}
           >
-            Close Preview
+            Close
           </button>
         </div>
       </div>
@@ -1212,6 +1681,7 @@ const KnowledgeBase = ({ onRefresh }) => {
         <FilePreviewModal
           file={viewingFile}
           content={viewingFileContent}
+          embeddingsData={embeddingsData}
           onClose={() => { setShowViewModal(false); setViewingFile(null); setViewingFileContent(null) }}
         />
       )}

@@ -246,12 +246,12 @@ export default function Notes() {
     result = result.replace(/\+\+([^+]+)\+\+/g, '<mark class="hl-orange">$1</mark>')
     result = result.replace(/~([^~]+)~/g, '<sub>$1</sub>')
     result = result.replace(/\^([^^]+)\^/g, '<sup>$1</sup>')
-    result = result.replace(/<!--yellow:([^>]+)-->/g, '<span class="annotation ann-yellow" title="Yellow Annotation">💬 $1</span>')
-    result = result.replace(/<!--blue:([^>]+)-->/g, '<span class="annotation ann-blue" title="Blue Annotation">💬 $1</span>')
-    result = result.replace(/<!--green:([^>]+)-->/g, '<span class="annotation ann-green" title="Green Annotation">💬 $1</span>')
-    result = result.replace(/<!--red:([^>]+)-->/g, '<span class="annotation ann-red" title="Red Annotation">💬 $1</span>')
-    result = result.replace(/<!--purple:([^>]+)-->/g, '<span class="annotation ann-purple" title="Purple Annotation">💬 $1</span>')
-    result = result.replace(/<!--([^:]+):([^>]+)-->/g, '<span class="annotation" title="Annotation">💬 $2</span>')
+    result = result.replace(/<!--yellow:([^>]+)-->/g, '<span class="annotation ann-yellow" title="Yellow Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $1</span>')
+    result = result.replace(/<!--blue:([^>]+)-->/g, '<span class="annotation ann-blue" title="Blue Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $1</span>')
+    result = result.replace(/<!--green:([^>]+)-->/g, '<span class="annotation ann-green" title="Green Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $1</span>')
+    result = result.replace(/<!--red:([^>]+)-->/g, '<span class="annotation ann-red" title="Red Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $1</span>')
+    result = result.replace(/<!--purple:([^>]+)-->/g, '<span class="annotation ann-purple" title="Purple Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $1</span>')
+    result = result.replace(/<!--([^:]+):([^>]+)-->/g, '<span class="annotation" title="Annotation"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ann-icon"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> $2</span>')
     return result
   }
 
@@ -436,7 +436,7 @@ const handleSelectNote = useCallback((noteId) => {
       summarize: async () => {
         if (isMeeting) {
           const summary = generateMeetingSummary(content)
-          const newContent = note.content + `\n\n## 📝 Meeting Summary\n\n${summary}`
+          const newContent = note.content + `\n\n## Meeting Summary\n\n${summary}`
           await updateNote(note.id, { content: newContent })
         } else {
           const summaryMd = `\n\n## Summary\n${content}`
@@ -474,9 +474,9 @@ const handleSelectNote = useCallback((noteId) => {
           return
         }
         const decisions = extractDecisions(content)
-        const decisionsMd = decisions.length > 0
-          ? `\n\n## 📌 Decisions & Motions\n\n| Motion | Proposed By | Seconded | Result | Notes |\n|--------|-------------|----------|--------|-------|\n${decisions.map(d => `| ${d} |             |          | ⬜      |        |`).join('\n')}`
-          : `\n\n## 📌 Decisions & Motions\n\n${content}`
+          const decisionsMd = decisions.length > 0
+            ? `\n\n## Decisions & Motions\n\n| Motion | Proposed By | Seconded | Result | Notes |\n|--------|-------------|----------|--------|-------|\n${decisions.map(d => `| ${d} |             |          |        |        |`).join('\n')}`
+            : `\n\n## Decisions & Motions\n\n${content}`
         const newContent = note.content + decisionsMd
         await updateNote(note.id, { content: newContent })
         setToast({ type: 'success', message: 'Decisions extracted to table' })
@@ -487,9 +487,9 @@ const handleSelectNote = useCallback((noteId) => {
           return
         }
         const actions = extractActionItems(content)
-        const actionsMd = actions.length > 0
-          ? `\n\n## ✅ Action Plan Table\n\n| # | Action Item | Owner | Due Date | Priority | Status |\n|---|-------------|-------|----------|----------|--------|\n${actions.map((a, i) => `| ${i + 1} | ${a.item} | ${a.owner || ''} | ${a.due || ''} | 🟡 Medium | ⬜ |`).join('\n')}`
-          : `\n\n## ✅ Action Plan Table\n\n${content}`
+          const actionsMd = actions.length > 0
+            ? `\n\n## Action Plan Table\n\n| # | Action Item | Owner | Due Date | Priority | Status |\n|---|-------------|-------|----------|----------|--------|\n${actions.map((a, i) => `| ${i + 1} | ${a.item} | ${a.owner || ''} | ${a.due || ''} | Medium | Pending |`).join('\n')}`
+            : `\n\n## Action Plan Table\n\n${content}`
         const newContent = note.content + actionsMd
         await updateNote(note.id, { content: newContent })
         setToast({ type: 'success', message: 'Action items extracted to table' })
@@ -500,7 +500,7 @@ const handleSelectNote = useCallback((noteId) => {
           return
         }
         const attendees = extractAttendees(content)
-        const attendanceMd = `\n\n### 📚 Attendance Log\n\n| Name | Role | Present |\n|------|------|---------|\n${attendees.map(a => `| ${a} |      | ⬜     |`).join('\n')}`
+        const attendanceMd = `\n\n### Attendance Log\n\n| Name | Role | Present |\n|------|------|---------|\n${attendees.map(a => `| ${a} |      |        |`).join('\n')}`
         const newContent = note.content + attendanceMd
         await updateNote(note.id, { content: newContent })
         setToast({ type: 'success', message: 'Attendance list generated' })
@@ -510,7 +510,7 @@ const handleSelectNote = useCallback((noteId) => {
           setToast({ type: 'error', message: 'This action is only for meeting notes' })
           return
         }
-        const motionsMd = `\n\n## 📌 Decisions & Motions\n\n| Motion | Proposed By | Seconded | Result | Notes |\n|--------|-------------|----------|--------|-------|\n| ${content.split('\n')[0] || 'Motion'} |       |          | ⬜      |        |`
+        const motionsMd = `\n\n## Decisions & Motions\n\n| Motion | Proposed By | Seconded | Result | Notes |\n|--------|-------------|----------|--------|-------|\n| ${content.split('\n')[0] || 'Motion'} |       |          |        |        |`
         const newContent = note.content + motionsMd
         await updateNote(note.id, { content: newContent })
         setToast({ type: 'success', message: 'Motion added to decisions table' })

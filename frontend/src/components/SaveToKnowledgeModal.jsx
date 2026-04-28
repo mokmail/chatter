@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 
-const SaveToKnowledgeModal = ({ isOpen, onClose, target, knowledgeBases, onSave }) => {
+const SaveToKnowledgeModal = ({ isOpen, onClose, target, knowledgeBases, onSave, onCreateKB }) => {
   const [selectedKBs, setSelectedKBs] = useState([])
   const [urlSelections, setUrlSelections] = useState({})
   const [urlInput, setUrlInput] = useState('')
@@ -166,7 +166,7 @@ const SaveToKnowledgeModal = ({ isOpen, onClose, target, knowledgeBases, onSave 
               {knowledgeBases.length === 0 ? (
                 <div className="text-center py-6 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>No knowledge bases yet</div>
-                  <a href="#" className="text-[10px] text-accent hover:underline mt-1 block">Create one</a>
+                  <button onClick={onCreateKB || onClose} className="text-[10px] text-accent hover:underline mt-1 block">Create one</button>
                 </div>
               ) : (
                 knowledgeBases.map(kb => (

@@ -128,6 +128,7 @@ function AppInner() {
   })
   const [showSearch, setShowSearch] = useState(false)
   const [searchResults, setSearchResults] = useState([])
+  const [highlightMessage, setHighlightMessage] = useState(null)
   const [followupLoading, setFollowupLoading] = useState({})
   const messagesEndRef = useRef(null)
   const chatInputRef = useRef(null)
@@ -193,6 +194,10 @@ function AppInner() {
   }
 
   const handleSearchSelect = (result) => {
+    setHighlightMessage(result.message_index !== null ? {
+      index: result.message_index,
+      query: result.query,
+    } : null)
     handleSwitchSession(result.session_id)
   }
 
@@ -414,6 +419,12 @@ function AppInner() {
     }, 300)
     return () => clearTimeout(timer)
   }, [isStreaming, messages, followupSettings.autoGenerate])
+
+  useEffect(() => {
+    if (!highlightMessage) return
+    const timer = setTimeout(() => setHighlightMessage(null), 5000)
+    return () => clearTimeout(timer)
+  }, [highlightMessage])
 
   const getSessionActionMeta = (action) => {
     switch (action?.type) {
@@ -707,6 +718,8 @@ function AppInner() {
                             knowledgeBases={knowledgeBases}
                             index={i}
                             totalMessages={messages.length}
+                            highlight={highlightMessage?.index === i}
+                            highlightQuery={highlightMessage?.index === i ? highlightMessage.query : null}
                             onEdit={handleEdit}
                             onCopy={handleCopy}
                             onEvaluate={handleEvaluate}
@@ -856,6 +869,7 @@ function AppInner() {
         onClose={() => { setShowSaveToKnowledge(false); setSaveToKnowledgeTarget(null) }}
         target={saveToKnowledgeTarget}
         knowledgeBases={knowledgeBases}
+        onCreateKB={() => { setShowSaveToKnowledge(false); setSaveToKnowledgeTarget(null); setActivePage('knowledge') }}
       />
 
       

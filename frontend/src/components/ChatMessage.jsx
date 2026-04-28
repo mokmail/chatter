@@ -26,7 +26,7 @@ const codeComponent = ({ node, inline, className, children, ...props }) => {
   }} {...props}>{children}</code>
 }
 
-export default function ChatMessage({ message, isStreaming, knowledgeBases = [], index = 0, totalMessages = 1, onEdit, onCopy, onEvaluate, onBranch, onFork, onContinue, onRegenerate, onDelete, onShare, onSaveToKnowledge, editingMessage, editText, setEditText, onSaveEdit, onCancelEdit }) {
+export default function ChatMessage({ message, isStreaming, knowledgeBases = [], index = 0, totalMessages = 1, highlight = false, highlightQuery = null, onEdit, onCopy, onEvaluate, onBranch, onFork, onContinue, onRegenerate, onDelete, onShare, onSaveToKnowledge, editingMessage, editText, setEditText, onSaveEdit, onCancelEdit }) {
   const isUser = message.role === 'user'
   const isAssistantStreaming = !isUser && isStreaming && message.content
 
@@ -40,11 +40,28 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
 
   const isEditing = editingMessage === message.id
 
+  const highlightText = (text, query) => {
+    if (!query || !text) return text
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    const parts = text.split(regex)
+    return parts.map((part, i) =>
+      regex.test(part) ? <span key={i} className="bg-yellow-500/50 text-yellow-200 rounded px-0.5 animate-pulse">{part}</span> : part
+    )
+  }
+
   return (
-    <div 
+    <div
       className={`group w-full mb-8 animate-slide-up stagger-${Math.min(index % 5 + 1, 5)} ${isUser ? 'flex flex-col items-end' : 'flex flex-col items-start'}`}
       style={{ animationDelay: `${index * 0.05}s` }}
     >
+      {highlight && (
+        <div className="w-full mb-2 px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/40 rounded-lg text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          Search match: <span className="font-semibold">{highlightQuery}</span>
+        </div>
+      )}
       <div className={`flex gap-4 max-w-[92%] md:max-w-[88%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         {/* Premium Avatar */}
         <div className="shrink-0 mt-0.5">
@@ -136,13 +153,17 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
               </div>
             ) : (
               <div className="prose prose-invert max-w-none relative z-10">
-                <ReactMarkdown 
-                  remarkPlugins={[remarkGfm, remarkMath]} 
-                  rehypePlugins={[rehypeKatex]}
-                  components={{ code: codeComponent }}
-                >
-                  {displayContent}
-                </ReactMarkdown>
+                {highlight && highlightQuery ? (
+                  <div className="whitespace-pre-wrap">{highlightText(displayContent, highlightQuery)}</div>
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
+                    components={{ code: codeComponent }}
+                  >
+                    {displayContent}
+                  </ReactMarkdown>
+                )}
                 {isAssistantStreaming && <StreamingCursor />}
               </div>
             )}
