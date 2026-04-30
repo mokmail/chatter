@@ -50,7 +50,7 @@ const SOURCE_TYPES = {
     color: '#6366f1', 
     icon: <FileIcon size={18} />,
     fields: [
-      { key: 'files', label: 'Upload Files', type: 'file', accept: '.pdf,.txt,.md,.doc,.docx,.csv,.json', help: 'Select files to upload and add to knowledge base' },
+      { key: 'files', label: 'Upload Files', type: 'file', accept: '.pdf,.txt,.md,.doc,.docx,.csv,.json', help: 'Select files to upload and add to knowledge base', required: true },
       { key: 'allowedTypes', label: 'Allowed File Types', type: 'text', default: '.pdf,.txt,.md,.doc,.docx,.csv,.json', help: 'Comma-separated file extensions' },
       { key: 'maxFileSize', label: 'Max File Size (MB)', type: 'number', default: 50, help: 'Maximum file size for uploads' },
     ]
@@ -310,6 +310,43 @@ const SettingRow = ({ field, value, onChange }) => {
 )
 }
 
+const FileInputField = ({ value, onChange, accept = '*' }) => {
+  const fileInputRef = useRef(null)
+  return (
+    <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={accept}
+        onChange={e => {
+          onChange(Array.from(e.target.files))
+        }}
+        className="hidden"
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors w-full"
+        style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--accent)', border: '1px dashed var(--border)' }}
+      >
+        <UploadIcon size={12} />
+        {value && value.length > 0 ? `${value.length} file${value.length !== 1 ? 's' : ''} selected` : 'Choose files...'}
+      </button>
+      {value && value.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {value.map((f, i) => (
+            <div key={i} className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+              <FileIcon size={9} />
+              <span className="truncate">{f.name}</span>
+              <span>({(f.size / 1024).toFixed(1)} KB)</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const SourceFieldInput = ({ field, value, onChange }) => {
   const inputValue = value ?? field.default ?? ''
   switch (field.type) {
@@ -376,35 +413,7 @@ const SourceFieldInput = ({ field, value, onChange }) => {
       )
     case 'file':
       return (
-        <div>
-          <input
-            ref={field.fileInputRef}
-            type="file"
-            multiple
-            accept={field.accept || '*'}
-            onChange={e => onChange(Array.from(e.target.files))}
-            className="hidden"
-          />
-          <button
-            onClick={() => field.fileInputRef?.current?.click()}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors w-full"
-            style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--accent)', border: '1px dashed var(--border)' }}
-          >
-            <UploadIcon size={12} />
-            {inputValue && inputValue.length > 0 ? `${inputValue.length} file${inputValue.length !== 1 ? 's' : ''} selected` : 'Choose files...'}
-          </button>
-          {inputValue && inputValue.length > 0 && (
-            <div className="mt-1 space-y-0.5">
-              {inputValue.map((f, i) => (
-                <div key={i} className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                  <FileIcon size={9} />
-                  <span className="truncate">{f.name}</span>
-                  <span>({(f.size / 1024).toFixed(1)} KB)</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <FileInputField value={inputValue} onChange={onChange} accept={field.accept} />
       )
     default:
       return null
@@ -434,9 +443,15 @@ const SourceTypePicker = ({ onSelect }) => {
   )
 }
 
-const SourceConfigForm = ({ sourceType, draft, onDraftChange, onCancel, onAdd }) => {
+const SourceConfigForm = ({ sourceType, draft, onDraftChange, onCancel, onAdd, isAdding }) => {
   const sourceInfo = SOURCE_TYPES[sourceType]
   if (!sourceInfo) return null
+
+  const requiredFields = sourceInfo.fields.filter(f => f.required)
+  const filesField = sourceInfo.fields.find(f => f.type === 'file')
+  const hasFiles = filesField && draft[filesField.key] && draft[filesField.key].length > 0
+  const missingRequired = requiredFields.some(f => !draft[f.key]?.toString().trim())
+  const canAdd = sourceType === 'files' ? hasFiles && !missingRequired && !isAdding : !missingRequired && !isAdding
 
   return (
     <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
@@ -497,15 +512,105 @@ const SourceConfigForm = ({ sourceType, draft, onDraftChange, onCancel, onAdd })
         </button>
         <button
           onClick={onAdd}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium"
-          style={{ background: 'var(--accent)', color: '#fff' }}
+          disabled={!canAdd}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: canAdd ? 'var(--accent)' : 'var(--bg-secondary)', color: canAdd ? '#fff' : 'var(--text-tertiary)' }}
         >
-          Add Source
+          {isAdding ? <LoadingSpinner size={12} /> : null}
+          {isAdding ? 'Uploading...' : 'Add Source'}
         </button>
       </div>
     </div>
   )
 }
+
+const EditableName = ({ value, onRename, className = '', title }) => {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value || '')
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  useEffect(() => {
+    setDraft(value || '')
+  }, [value])
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            onRename(draft)
+            setEditing(false)
+          }
+          if (e.key === 'Escape') {
+            setDraft(value || '')
+            setEditing(false)
+          }
+        }}
+        onBlur={() => {
+          if (draft.trim() && draft !== value) onRename(draft)
+          setEditing(false)
+        }}
+        className={`truncate bg-[var(--bg-secondary)] text-xs font-semibold rounded px-1 py-0.5 outline-none ring-1 ring-[var(--accent)] ${className}`}
+        style={{ color: 'var(--text)', minWidth: '80px', maxWidth: '200px' }}
+      />
+    )
+  }
+
+  return (
+    <span
+      className={`truncate cursor-text group/editable ${className}`}
+      title={title || 'Double-click to rename'}
+      onDoubleClick={() => setEditing(true)}
+    >
+      {value}
+    </span>
+  )
+}
+
+const ViewToggle = ({ mode, onChange }) => (
+  <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+    <button
+      onClick={() => onChange('list')}
+      className="p-1.5 transition-colors"
+      style={{ backgroundColor: mode === 'list' ? 'var(--accent)' : 'transparent', color: mode === 'list' ? '#fff' : 'var(--text-tertiary)' }}
+      title="List view"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+      </svg>
+    </button>
+    <button
+      onClick={() => onChange('grid')}
+      className="p-1.5 transition-colors"
+      style={{ backgroundColor: mode === 'grid' ? 'var(--accent)' : 'transparent', color: mode === 'grid' ? '#fff' : 'var(--text-tertiary)' }}
+      title="Grid view"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+      </svg>
+    </button>
+    <button
+      onClick={() => onChange('stack')}
+      className="p-1.5 transition-colors"
+      style={{ backgroundColor: mode === 'stack' ? 'var(--accent)' : 'transparent', color: mode === 'stack' ? '#fff' : 'var(--text-tertiary)' }}
+      title="Stack view"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.011.024.025.048.04.072M6 6.878L6.04 6.95M6 6.878v.878m0 .878v.878m0 .878v.878m0 .878v.431c0 .032.002.063.007.094M6 10.12v.878m0 .878v.878m0 .878v.878m0 .878v.878m0 .878A2.25 2.25 0 008.25 12h7.5a2.25 2.25 0 002.25-2.25v-.878m-12 .878v.878m0 .878v.878m0 .878v-.878m0 .878v.878m0 .878v.878m0 .878A2.25 2.25 0 008.25 15h7.5a2.25 2.25 0 002.25-2.25v-.878" />
+      </svg>
+    </button>
+  </div>
+)
 
 const formatSyncTime = (timestamp) => {
   const seconds = Math.floor(Date.now() / 1000) - timestamp
@@ -515,7 +620,7 @@ const formatSyncTime = (timestamp) => {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
-const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSync, onEmbed, onDelete, onViewFile, onDeleteFile, onUploadFiles }) => {
+const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSync, onEmbed, onDelete, onViewFile, onDeleteFile, onUploadFiles, onRenameSource, onRenameFile, viewMode = 'grid' }) => {
   const stInfo = SOURCE_TYPES[source.type] || SOURCE_TYPES.notes
   const status = source.status || 'active'
   const lastSynced = source.last_synced
@@ -526,6 +631,57 @@ const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSy
   const [filesExpanded, setFilesExpanded] = useState(fileCount > 0)
   const fileInputRef = useRef(null)
 
+  if (viewMode === 'list') {
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 rounded-xl border bg-[var(--surface)] transition-colors hover:bg-[var(--surface-hover)] group" style={{ borderColor: 'var(--border)' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: stInfo.color + '20', color: stInfo.color }}>
+          {isSyncing ? <LoadingSpinner size={14} /> : React.cloneElement(stInfo.icon, { size: 16 })}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold truncate" style={{ color: 'var(--text)' }}>
+            <EditableName value={source.name || stInfo.label} onRename={n => onRenameSource?.(source.id, n)} />
+          </div>
+          <div className="text-[10px] text-[var(--text-tertiary)] truncate">
+            {stInfo.label}{sourceSummary ? ' · ' + sourceSummary.slice(0, 30) : ''}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] text-[var(--text-secondary)] shrink-0">
+          <span>{fileCount} files</span>
+          <span>{chunkCount} chunks</span>
+          <span className="px-1.5 py-0.5 rounded-full font-medium"
+            style={{
+              backgroundColor: status === 'active' ? 'var(--accent-subtle, #10b98120)' : status === 'syncing' ? '#f59e0b20' : '#ef444420',
+              color: status === 'active' ? 'var(--accent)' : status === 'syncing' ? '#f59e0b' : '#ef4444'
+            }}>
+            {status}
+          </span>
+          {lastSynced && <span>{formatSyncTime(lastSynced)}</span>}
+        </div>
+        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <input ref={fileInputRef} type="file" multiple
+            accept=".pdf,.txt,.md,.doc,.docx,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.svg,.log"
+            className="hidden"
+            onChange={e => { if (e.target.files.length > 0 && onUploadFiles) { onUploadFiles(Array.from(e.target.files)); e.target.value = '' } }}
+          />
+          {source.type === 'files' && (
+            <button onClick={() => fileInputRef.current?.click()} className="p-1.5 rounded hover:bg-[var(--accent)]/10" style={{ color: 'var(--accent)' }} title="Upload">
+              <UploadIcon size={13} />
+            </button>
+          )}
+          <button onClick={onSync} disabled={isSyncing} className="p-1.5 rounded hover:bg-[var(--accent)]/10 disabled:opacity-50" style={{ color: 'var(--accent)' }} title="Sync">
+            {isSyncing ? <LoadingSpinner size={13} /> : <RefreshIcon size={13} />}
+          </button>
+          <button onClick={onEmbed} disabled={!hasFiles || isEmbedding} className="p-1.5 rounded hover:bg-[var(--accent)]/10 disabled:opacity-50" style={{ color: 'var(--accent)' }} title="Embed">
+            <DatabaseIcon size={13} />
+          </button>
+          <button onClick={onDelete} className="p-1.5 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }} title="Remove">
+            <TrashIcon size={13} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-2xl border bg-[var(--surface)] p-4 space-y-3" style={{ borderColor: 'var(--border)' }}>
       <div className="flex items-start gap-3">
@@ -533,7 +689,9 @@ const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSy
           {isSyncing ? <LoadingSpinner size={16} /> : stInfo.icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{source.name || stInfo.label}</div>
+          <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
+            <EditableName value={source.name || stInfo.label} onRename={n => onRenameSource?.(source.id, n)} />
+          </div>
           <div className="text-[11px] mt-1 text-[var(--text-tertiary)] truncate">
             {stInfo.label}{sourceSummary ? ' · ' + sourceSummary.slice(0, 40) : ''}
           </div>
@@ -592,9 +750,9 @@ const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSy
                   <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>
                     {file.content_url ? (
                       <a href={file.content_url} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: 'var(--accent)' }}>
-                        {file.name}
+                        <EditableName value={file.name} onRename={n => onRenameFile?.(file.id, n)} />
                       </a>
-                    ) : file.name}
+                    ) : <EditableName value={file.name} onRename={n => onRenameFile?.(file.id, n)} />}
                   </span>
                   {file.chunks_count > 0 && (
                     <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--accent-subtle, #10b98120)', color: 'var(--accent)' }}>
@@ -779,12 +937,10 @@ const SettingsPanel = ({ kb, onSave, models = [] }) => {
   )
 }
 
-const SourcesPanel = ({ kb, kbFiles = [], onSave, onDeleteSource, onRefresh, onEmbedSource, isEmbedding, onViewFile, onDeleteFile, onUploadFilesToSource }) => {
+const SourcesPanel = ({ kb, kbFiles = [], onDeleteSource, onRefresh, onEmbedSource, isEmbedding, onViewFile, onDeleteFile, onUploadFilesToSource, onRenameSource, onRenameFile, sourceViewMode, onSourceViewModeChange }) => {
   const sources = kb.config?.sources || []
   const [syncingSourceId, setSyncingSourceId] = useState(null)
   const [syncingAll, setSyncingAll] = useState(false)
-  const [addingSourceType, setAddingSourceType] = useState(null)
-  const [sourceDraft, setSourceDraft] = useState({})
 
   const getSourceFiles = (sourceId) => kbFiles.filter(file => file.metadata?.source_id === sourceId)
 
@@ -823,90 +979,45 @@ const SourcesPanel = ({ kb, kbFiles = [], onSave, onDeleteSource, onRefresh, onE
     }
   }
 
+  if (sources.length === 0) return null
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          {sources.length > 0 && !addingSourceType && (
-            <button
-              onClick={handleSyncAll}
-              disabled={syncingAll}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-              style={{ backgroundColor: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--border)' }}
-            >
-              {syncingAll ? <LoadingSpinner size={12} /> : <RefreshIcon size={12} />}
-              {syncingAll ? 'Syncing...' : 'Sync All'}
-            </button>
-          )}
+          <button
+            onClick={handleSyncAll}
+            disabled={syncingAll}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--border)' }}
+          >
+            {syncingAll ? <LoadingSpinner size={12} /> : <RefreshIcon size={12} />}
+            {syncingAll ? 'Syncing...' : 'Sync All'}
+          </button>
         </div>
+        <ViewToggle mode={sourceViewMode} onChange={onSourceViewModeChange || (() => {})} />
       </div>
 
-      {addingSourceType ? (
-        <SourceConfigForm
-          sourceType={addingSourceType}
-          draft={sourceDraft}
-          onDraftChange={setSourceDraft}
-          onCancel={() => { setAddingSourceType(null); setSourceDraft({}) }}
-          onAdd={async () => {
-            const sourceInfo = SOURCE_TYPES[addingSourceType]
-            const sourceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
-            let fileCount = 0
-            if (addingSourceType === 'files' && sourceDraft.files && sourceDraft.files.length > 0) {
-              fileCount = sourceDraft.files.length
-              for (const file of sourceDraft.files) {
-                const formData = new FormData()
-                formData.append('file', file)
-                formData.append('source_id', sourceId)
-                await fetch(`/api/knowledge/${kb.id}/upload`, {
-                  method: 'POST',
-                  body: formData,
-                })
-              }
-            }
-            const config = { ...sourceDraft }
-            delete config.files
-            const newSource = {
-              id: sourceId,
-              type: addingSourceType,
-              name: sourceDraft.name || (addingSourceType === 'files' && fileCount > 0 ? `Files (${fileCount} files)` : sourceDraft.repoUrl || sourceDraft.url || sourceDraft.apiEndpoint || sourceDraft.directoryPath || sourceInfo.label),
-              config,
-              created_at: Date.now() / 1000,
-              status: 'active',
-              files_count: fileCount,
-              last_synced: fileCount > 0 ? Date.now() / 1000 : undefined,
-            }
-            onSave({ config: { ...(kb.config || {}), sources: [...sources, newSource] } })
-            setAddingSourceType(null)
-            setSourceDraft({})
-          }}
-        />
-      ) : (
-        <>
-          <SourceTypePicker onSelect={(type) => {
-            setAddingSourceType(type)
-            setSourceDraft(DEFAULT_SOURCE_CONFIG[type] || {})
-          }} />
-          {sources.length > 0 && (
-            <div className="space-y-3 mt-3">
-              {sources.map((source, idx) => (
-                <SourceListItem
-                  key={source.id || idx}
-                  source={source}
-                    sourceFiles={getSourceFiles(source.id)}
-                    isSyncing={syncingSourceId === source.id}
-                    isEmbedding={isEmbedding}
-                    onSync={() => handleSyncSource(source.id)}
-                    onEmbed={() => onEmbedSource?.(source.id)}
-                    onDelete={() => onDeleteSource(source.id)}
-                    onViewFile={onViewFile}
-                    onDeleteFile={(fileId) => onDeleteFile?.(fileId, source.id)}
-                    onUploadFiles={(files) => onUploadFilesToSource?.(source.id, files)}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      <div className={sourceViewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-3' : sourceViewMode === 'stack' ? 'flex flex-col gap-0.5' : 'flex flex-col gap-2'}>
+        {sources.map((source, idx) => (
+          <SourceListItem
+            key={source.id || idx}
+            source={source}
+            sourceFiles={getSourceFiles(source.id)}
+            isSyncing={syncingSourceId === source.id}
+            isEmbedding={isEmbedding}
+            onSync={() => handleSyncSource(source.id)}
+            onEmbed={() => onEmbedSource?.(source.id)}
+            onDelete={() => onDeleteSource(source.id)}
+            onViewFile={onViewFile}
+            onDeleteFile={(fileId) => onDeleteFile?.(fileId, source.id)}
+            onUploadFiles={(files) => onUploadFilesToSource?.(source.id, files)}
+            onRenameSource={onRenameSource}
+            onRenameFile={onRenameFile}
+            viewMode={sourceViewMode}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -991,28 +1102,25 @@ const SourceConfigModal = ({ isOpen, onClose, sourceType, onAdd }) => {
 }
 
 // Premium Knowledge Base Card with full insights
-const KnowledgeBaseCard = ({ kb, active, onClick, onDelete }) => {
+const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const itemCount = kb.file_count || 0
   const embeddedCount = kb.files?.filter(f => f.is_embedded).length || 0
   const totalTokens = kb.files?.reduce((sum, f) => sum + (f.token_count || 0), 0) || 0
   const totalChunks = kb.files?.reduce((sum, f) => sum + (f.chunks_count || 0), 0) || 0
 
-  // Format large numbers
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
-  // Format relative time
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return 'Never'
     const diff = Date.now() / 1000 - timestamp
     const minutes = Math.floor(diff / 60)
     const hours = Math.floor(diff / 3600)
     const days = Math.floor(diff / 86400)
-
     if (minutes < 1) return 'Just now'
     if (minutes < 60) return `${minutes}m ago`
     if (hours < 24) return `${hours}h ago`
@@ -1023,6 +1131,104 @@ const KnowledgeBaseCard = ({ kb, active, onClick, onDelete }) => {
 
   const isFullyEmbedded = itemCount > 0 && embeddedCount === itemCount
   const isPartiallyEmbedded = embeddedCount > 0 && embeddedCount < itemCount
+
+  if (viewMode === 'grid') {
+    return (
+      <div
+        onClick={onClick}
+        className={`group relative flex flex-col p-3 rounded-2xl text-sm transition-all duration-300 cursor-pointer
+          ${active
+            ? 'glass-card-strong border-[var(--accent-primary)]/30 glow-accent-sm scale-[1.02]'
+            : 'glass-card hover:border-[var(--accent-primary)]/20 hover:shadow-lg hover:scale-[1.01]'
+          }`}
+      >
+        {active && (
+          <div className="absolute -left-0.5 top-3 bottom-3 w-1 rounded-full bg-gradient-to-b from-[var(--accent-primary)] to-[var(--accent-secondary)]" />
+        )}
+        <div className="flex items-center gap-2 mb-2">
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+            style={{
+              background: `linear-gradient(135deg, ${typeInfo.color}20, ${typeInfo.color}08)`,
+              border: `1px solid ${typeInfo.color}20`,
+              color: typeInfo.color
+            }}
+          >
+            {React.cloneElement(typeInfo.icon, { size: 18 })}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className={`text-xs font-semibold truncate ${active ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
+              {kb.name}
+            </h3>
+            <div className="text-[10px] text-[var(--text-muted)]">{formatNumber(itemCount)} files · {formatNumber(totalChunks)} chunks</div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); if (onDelete) onDelete(kb.id) }}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded text-[var(--text-muted)] hover:text-[var(--danger)] transition-all"
+          >
+            <TrashIcon size={12} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/50">
+          {itemCount === 0 ? (
+            <span className="text-[9px] text-[var(--text-muted)]">Empty</span>
+          ) : isFullyEmbedded ? (
+            <span className="flex items-center gap-1 text-[9px] text-emerald-500 font-medium">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" /></svg>
+              Indexed
+            </span>
+          ) : isPartiallyEmbedded ? (
+            <span className="text-[9px] text-amber-500 font-medium">{embeddedCount}/{itemCount}</span>
+          ) : (
+            <span className="text-[9px] text-[var(--text-muted)]">Not indexed</span>
+          )}
+          <span className="text-[9px] text-[var(--text-muted)]">{formatTimeAgo(kb.updated_at)}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (viewMode === 'stack') {
+    return (
+      <div
+        onClick={onClick}
+        className={`group relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-300 cursor-pointer
+          ${active
+            ? 'bg-[var(--accent-subtle, #10b98120)] border border-[var(--accent)]/40'
+            : 'bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--accent-primary)]/30'
+          }`}
+      >
+        <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+          style={{ backgroundColor: typeInfo.color + '20', color: typeInfo.color }}>
+          {React.cloneElement(typeInfo.icon, { size: 14 })}
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className={`text-xs font-semibold truncate ${active ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
+            {kb.name}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[10px] text-[var(--text-muted)]">
+          <span>{formatNumber(itemCount)} files</span>
+          <span>{formatNumber(totalChunks)} chunks</span>
+        </div>
+        {itemCount > 0 ? isFullyEmbedded ? (
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500" title="Indexed" />
+        ) : isPartiallyEmbedded ? (
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500" title="Partially indexed" />
+        ) : (
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" title="Not indexed" />
+        ) : (
+          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]/30" title="Empty" />
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); if (onDelete) onDelete(kb.id) }}
+          className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--danger)] transition-all"
+        >
+          <TrashIcon size={11} />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -1156,7 +1362,7 @@ const KnowledgeBaseCard = ({ kb, active, onClick, onDelete }) => {
   )
 }
 
-const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding }) => {
+const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding, onRename, viewMode = 'grid' }) => {
   const formatSize = (bytes) => {
     if (!bytes) return '0 B'
     const k = 1024
@@ -1165,14 +1371,12 @@ const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  // Format relative time
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return 'Unknown'
     const diff = Date.now() / 1000 - timestamp
     const minutes = Math.floor(diff / 60)
     const hours = Math.floor(diff / 3600)
     const days = Math.floor(diff / 86400)
-
     if (minutes < 1) return 'Just now'
     if (minutes < 60) return `${minutes}m ago`
     if (hours < 24) return `${hours}h ago`
@@ -1181,24 +1385,82 @@ const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding }) => {
     return new Date(timestamp * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
 
-  // Get file icon color based on type
   const getFileColor = (fileType, fileName) => {
     const ext = fileName?.split('.').pop()?.toLowerCase() || ''
     const type = (fileType || '').toLowerCase()
-
-    if (['pdf'].includes(ext) || type.includes('pdf')) return '#ef4444' // red
-    if (['doc', 'docx'].includes(ext) || type.includes('word')) return '#3b82f6' // blue
-    if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('excel') || type.includes('csv')) return '#22c55e' // green
-    if (['ppt', 'pptx'].includes(ext) || type.includes('powerpoint')) return '#f97316' // orange
-    if (['md', 'txt', 'text'].includes(ext) || type.includes('text') || type.includes('markdown')) return '#64748b' // slate
-    if (['js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'java', 'c', 'cpp', 'go', 'rs'].includes(ext)) return '#8b5cf6' // purple
-    if (['json', 'xml', 'yaml', 'yml'].includes(ext)) return '#eab308' // yellow
-    if (['html', 'htm', 'css'].includes(ext)) return '#ec4899' // pink
-    return '#6366f1' // indigo default
+    if (['pdf'].includes(ext) || type.includes('pdf')) return '#ef4444'
+    if (['doc', 'docx'].includes(ext) || type.includes('word')) return '#3b82f6'
+    if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('excel') || type.includes('csv')) return '#22c55e'
+    if (['ppt', 'pptx'].includes(ext) || type.includes('powerpoint')) return '#f97316'
+    if (['md', 'txt', 'text'].includes(ext) || type.includes('text') || type.includes('markdown')) return '#64748b'
+    if (['js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'java', 'c', 'cpp', 'go', 'rs'].includes(ext)) return '#8b5cf6'
+    if (['json', 'xml', 'yaml', 'yml'].includes(ext)) return '#eab308'
+    if (['html', 'htm', 'css'].includes(ext)) return '#ec4899'
+    return '#6366f1'
   }
 
   const fileColor = getFileColor(file.file_type, file.name)
   const fileExt = file.name?.split('.').pop()?.toUpperCase() || file.file_type?.toUpperCase() || 'FILE'
+
+  if (viewMode === 'list') {
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 rounded-xl border bg-[var(--surface)] transition-colors hover:bg-[var(--surface-hover)] group" style={{ borderColor: 'var(--border)' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 relative" style={{ backgroundColor: fileColor + '20', color: fileColor }}>
+          <FileIcon size={14} />
+          <span className="absolute -bottom-0.5 -right-0.5 px-1 rounded text-[7px] font-bold" style={{ background: fileColor, color: '#fff' }}>{fileExt.slice(0, 3)}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold truncate" style={{ color: 'var(--text)' }}>
+            <EditableName value={file.name} onRename={n => onRename?.(file.id, n)} />
+          </div>
+          <div className="text-[10px] text-[var(--text-tertiary)]">{formatSize(file.size_bytes)} · {(file.token_count || 0).toLocaleString()} tokens</div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[10px] text-[var(--text-secondary)]">
+          {(file.chunks_count || 0) > 0 && <span>{file.chunks_count} chunks</span>}
+          {file.is_embedded ? (
+            <span className="flex items-center gap-1 text-emerald-500"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" /></svg></span>
+          ) : (
+            <button onClick={() => onEmbed?.(file.id)} disabled={isEmbedding} className="px-2 py-0.5 rounded text-[9px] font-medium disabled:opacity-50" style={{ background: 'var(--accent)', color: '#fff' }}>Embed</button>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onView(file)} className="p-1.5 rounded hover:bg-[var(--accent)]/10" style={{ color: 'var(--accent)' }} title="View">
+            <EyeIcon size={13} />
+          </button>
+          <button onClick={() => onDelete(file.id)} className="p-1.5 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }} title="Delete">
+            <TrashIcon size={13} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (viewMode === 'stack') {
+    return (
+      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border bg-[var(--surface)] transition-colors hover:bg-[var(--surface-hover)] group" style={{ borderColor: 'var(--border)' }}>
+        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{ backgroundColor: fileColor + '20', color: fileColor }}>
+          <FileIcon size={11} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>
+            <EditableName value={file.name} onRename={n => onRename?.(file.id, n)} />
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[9px] text-[var(--text-secondary)]">
+          <span>{formatSize(file.size_bytes)}</span>
+          {file.is_embedded && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onView(file)} className="p-1 rounded hover:bg-[var(--accent)]/10" style={{ color: 'var(--accent)' }} title="View">
+            <EyeIcon size={11} />
+          </button>
+          <button onClick={() => onDelete(file.id)} className="p-1 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }} title="Delete">
+            <TrashIcon size={11} />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="group relative flex flex-col p-4 rounded-2xl text-sm transition-all duration-300 glass-card hover:border-[var(--accent-primary)]/20 hover:shadow-lg hover:scale-[1.01]">
@@ -1228,7 +1490,7 @@ const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding }) => {
         {/* File Name & Type */}
         <div className="flex-1 min-w-0 pt-0.5">
           <h3 className="font-semibold text-base truncate text-[var(--text)]">
-            {file.name}
+            <EditableName value={file.name} onRename={n => onRename?.(file.id, n)} className="text-base" />
           </h3>
           <div className="flex items-center gap-2 text-xs mt-1">
             <span style={{ color: fileColor }}>{file.file_type || 'Unknown'}</span>
@@ -1688,11 +1950,56 @@ const FilePreviewModal = ({ file, content, embeddingsData, onClose }) => {
           >
             {content}
           </SyntaxHighlighter>
-        </div>
-      )
-    }
+      </div>
+    )
+  }
 
+  if (viewMode === 'stack') {
     return (
+      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border bg-[var(--surface)] transition-colors hover:bg-[var(--surface-hover)] group" style={{ borderColor: 'var(--border)' }}>
+        <div className="w-6 h-6 rounded flex items-center justify-center shrink-0" style={{ backgroundColor: stInfo.color + '20', color: stInfo.color }}>
+          {isSyncing ? <LoadingSpinner size={12} /> : React.cloneElement(stInfo.icon, { size: 13 })}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>
+            <EditableName value={source.name || stInfo.label} onRename={n => onRenameSource?.(source.id, n)} />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[9px] text-[var(--text-secondary)]">
+          <span>{fileCount}f</span>
+          <span>{chunkCount}c</span>
+          <span className="w-1.5 h-1.5 rounded-full"
+            style={{
+              backgroundColor: status === 'active' ? 'var(--accent)' : status === 'syncing' ? '#f59e0b' : '#ef4444'
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <input ref={fileInputRef} type="file" multiple
+            accept=".pdf,.txt,.md,.doc,.docx,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.svg,.log"
+            className="hidden"
+            onChange={e => { if (e.target.files.length > 0 && onUploadFiles) { onUploadFiles(Array.from(e.target.files)); e.target.value = '' } }}
+          />
+          {source.type === 'files' && (
+            <button onClick={() => fileInputRef.current?.click()} className="p-1 rounded hover:bg-[var(--accent)]/10" style={{ color: 'var(--accent)' }} title="Upload">
+              <UploadIcon size={11} />
+            </button>
+          )}
+          <button onClick={onSync} disabled={isSyncing} className="p-1 rounded hover:bg-[var(--accent)]/10 disabled:opacity-50" style={{ color: 'var(--accent)' }} title="Sync">
+            {isSyncing ? <LoadingSpinner size={11} /> : <RefreshIcon size={11} />}
+          </button>
+          <button onClick={onEmbed} disabled={!hasFiles || isEmbedding} className="p-1 rounded hover:bg-[var(--accent)]/10 disabled:opacity-50" style={{ color: 'var(--accent)' }} title="Embed">
+            <DatabaseIcon size={11} />
+          </button>
+          <button onClick={onDelete} className="p-1 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }} title="Remove">
+            <TrashIcon size={11} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
       <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4 overflow-auto"
         style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', maxHeight: '70vh' }}>
         {content}
@@ -1881,6 +2188,12 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
   const [addSourceStep, setAddSourceStep] = useState('pick') // 'pick', 'config', or 'success'
   const [addSourceType, setAddSourceType] = useState(null)
   const [addSourceConfig, setAddSourceConfig] = useState({})
+  const [kbViewMode, setKbViewMode] = useState('list')
+  const [sourceViewMode, setSourceViewMode] = useState('grid')
+  const [inlineAddingType, setInlineAddingType] = useState(null)
+  const [inlineDraft, setInlineDraft] = useState({})
+  const [showAddSource, setShowAddSource] = useState(false)
+  const [isAddingSource, setIsAddingSource] = useState(false)
   const fileInputRef = useRef(null)
 
   // KB Chat state
@@ -2200,6 +2513,41 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
       fetchKBs()
     } catch (err) {
       console.error('Failed to delete item:', err)
+    }
+  }
+
+  const handleRenameSource = async (sourceId, newName) => {
+    if (!newName.trim() || !selectedKB) return
+    try {
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}/sources/${sourceId}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      })
+      if (resp.ok) {
+        const sources = (selectedKB.config?.sources || []).map(s => s.id === sourceId ? { ...s, name: newName.trim() } : s)
+        setSelectedKB({ ...selectedKB, config: { ...selectedKB.config, sources } })
+        fetchKBDetails(selectedKB.id)
+      }
+    } catch (err) {
+      console.error('Failed to rename source:', err)
+    }
+  }
+
+  const handleRenameFile = async (fileId, newName) => {
+    if (!newName.trim() || !selectedKB) return
+    try {
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}/files/${fileId}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim() }),
+      })
+      if (resp.ok) {
+        fetchKBDetails(selectedKB.id)
+        fetchKBs()
+      }
+    } catch (err) {
+      console.error('Failed to rename file:', err)
     }
   }
 
@@ -2683,14 +3031,17 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                 <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">RAG Context Sources</p>
               </div>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="p-2 rounded-lg glass-button text-[var(--accent-primary)] hover:scale-105
-                        transition-all duration-200 glow-accent-sm"
-              title="Create new knowledge base"
-            >
-              <PlusIcon size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <ViewToggle mode={kbViewMode} onChange={setKbViewMode} />
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="p-2 rounded-lg glass-button text-[var(--accent-primary)] hover:scale-105
+                          transition-all duration-200 glow-accent-sm"
+                title="Create new knowledge base"
+              >
+                <PlusIcon size={18} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2719,7 +3070,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
               </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
+            <div className={kbViewMode === 'grid' ? 'grid grid-cols-2 gap-3' : kbViewMode === 'stack' ? 'flex flex-col gap-0.5' : 'flex flex-col gap-4'}>
               {kbs.map((kb) => (
                 <KnowledgeBaseCard
                   key={kb.id}
@@ -2727,6 +3078,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                   active={selectedKB?.id === kb.id}
                   onClick={() => setSelectedKB(kb)}
                   onDelete={handleDeleteKB}
+                  viewMode={kbViewMode}
                 />
               ))}
             </div>
@@ -2795,11 +3147,17 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                   {isEmbedding ? 'Embedding...' : 'Embed'}
                 </button>
                 <button
-                  onClick={() => setShowAddModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-                  style={{ background: 'var(--accent)', color: '#fff' }}
+                  onClick={() => { setInlineAddingType(null); setInlineDraft({}); setShowAddSource(!showAddSource) }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: showAddSource ? 'var(--accent)' : 'var(--surface)',
+                    color: showAddSource ? '#fff' : 'var(--text-secondary)',
+                    border: '1px solid',
+                    borderColor: showAddSource ? 'var(--accent)' : 'var(--border)',
+                  }}
                 >
-                  Add
+                  <PlusIcon size={14} />
+                  Add Source
                 </button>
               </div>
             </div>
@@ -2953,31 +3311,77 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
               {(() => {
                 const sources = selectedKB.config?.sources || []
                 const orphanFiles = selectedKBFiles.filter(f => !f.metadata?.source_id)
-                const hasNoContent = sources.length === 0 && orphanFiles.length === 0
                 const getSourceFiles = (sourceId) => selectedKBFiles.filter(f => f.metadata?.source_id === sourceId)
-                return hasNoContent ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center
-                                    bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-secondary)]/5
-                                    border border-[var(--glass-border)]">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-[var(--accent-primary)] opacity-60">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>No items yet</h3>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Add content through sources to use as context in chats
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {sources.length > 0 && (
-                      <div className="space-y-3">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Sources ({sources.length})</h4>
+                const hasNoContent = sources.length === 0 && orphanFiles.length === 0
+
+                const handleInlineAdd = async () => {
+                  const sourceInfo = SOURCE_TYPES[inlineAddingType]
+                  const sourceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
+                  let fileCount = 0
+                  setIsAddingSource(true)
+                  try {
+                    if (inlineAddingType === 'files' && inlineDraft.files && inlineDraft.files.length > 0) {
+                      fileCount = inlineDraft.files.length
+                      for (const file of inlineDraft.files) {
+                        const formData = new FormData()
+                        formData.append('file', file)
+                        formData.append('source_id', sourceId)
+                        const resp = await fetch(`/api/knowledge/${selectedKB.id}/upload`, { method: 'POST', body: formData })
+                        if (!resp.ok) throw new Error('Upload failed')
+                      }
+                    }
+                    const config = { ...inlineDraft }
+                    delete config.files
+                    const newSource = {
+                      id: sourceId,
+                      type: inlineAddingType,
+                      name: inlineDraft.name || (inlineAddingType === 'files' && fileCount > 0 ? `Files (${fileCount} files)` : inlineDraft.repoUrl || inlineDraft.url || inlineDraft.apiEndpoint || inlineDraft.directoryPath || sourceInfo.label),
+                      config,
+                      created_at: Date.now() / 1000,
+                      status: 'active',
+                      files_count: fileCount,
+                      last_synced: fileCount > 0 ? Date.now() / 1000 : undefined,
+                    }
+                    const existingSources = selectedKB.config?.sources || []
+                    await fetch(`/api/knowledge/${selectedKB.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ config: { ...selectedKB.config, sources: [...existingSources, newSource] } }),
+                    })
+                    setInlineAddingType(null)
+                    setInlineDraft({})
+                    setShowAddSource(false)
+                    fetchKBDetails(selectedKB.id)
+                    fetchKBs()
+                  } catch (err) {
+                    console.error('Failed to add source:', err)
+                    alert('Failed to add source: ' + err.message)
+                  } finally {
+                    setIsAddingSource(false)
+                  }
+                }
+
+                return (
+                  <div className="space-y-6">
+                    {/* Your Sources */}
+                    <section>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: 'var(--accent)' + '15', color: 'var(--accent)' }}>
+                          <DatabaseIcon size={14} />
+                        </div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text)' }}>
+                          Your Sources
+                        </h3>
+                        {sources.length > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--accent-subtle, #10b98120)', color: 'var(--accent)' }}>
+                            {sources.length}
+                          </span>
+                        )}
+                      </div>
+                      {sources.length > 0 ? (
                         <SourcesPanel
                           kb={selectedKB}
                           kbFiles={selectedKBFiles}
-                          onSave={handleSaveSettings}
                           onDeleteSource={handleDeleteSource}
                           onRefresh={() => fetchKBDetails(selectedKB.id)}
                           onEmbedSource={handleEmbedSource}
@@ -2985,13 +3389,95 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                           onViewFile={handleViewFile}
                           onDeleteFile={handleDeleteFileFromSource}
                           onUploadFilesToSource={handleUploadFilesToSource}
+                          onRenameSource={handleRenameSource}
+                          onRenameFile={handleRenameFile}
+                          sourceViewMode={sourceViewMode}
+                          onSourceViewModeChange={setSourceViewMode}
                         />
+                      ) : (
+                        <div className="rounded-xl border-2 border-dashed p-6 text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+                          <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ backgroundColor: 'var(--accent)' + '15' }}>
+                            <PlusIcon size={20} style={{ color: 'var(--accent)' }} />
+                          </div>
+                          <p className="text-xs font-medium mb-1" style={{ color: 'var(--text)' }}>No sources added yet</p>
+                          <p className="text-[11px] mb-3" style={{ color: 'var(--text-tertiary)' }}>Click "Add Source" above to add content</p>
+                          <button
+                            onClick={() => setShowAddSource(true)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                            style={{ background: 'var(--accent)', color: '#fff' }}
+                          >
+                            Add Source
+                          </button>
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Add Source - only visible when toggled */}
+                    {showAddSource && (
+                    <section>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: '#6366f115', color: '#6366f1' }}>
+                          <PlusIcon size={14} />
+                        </div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text)' }}>
+                          Add Source
+                        </h3>
                       </div>
+
+                      {inlineAddingType ? (
+                        <SourceConfigForm
+                          sourceType={inlineAddingType}
+                          draft={inlineDraft}
+                          onDraftChange={setInlineDraft}
+                          onCancel={() => { setInlineAddingType(null); setInlineDraft({}) }}
+                          onAdd={handleInlineAdd}
+                          isAdding={isAddingSource}
+                        />
+                      ) : (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                          {Object.values(SOURCE_TYPES).map(type => {
+                            const alreadyAdded = sources.some(s => s.type === type.id)
+                            return (
+                              <button
+                                key={type.id}
+                                onClick={() => { setInlineAddingType(type.id); setInlineDraft(DEFAULT_SOURCE_CONFIG[type.id] || {}) }}
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all hover:scale-[1.03] hover:shadow-md"
+                                style={{ borderColor: alreadyAdded ? type.color + '40' : 'var(--border)', backgroundColor: alreadyAdded ? type.color + '08' : 'var(--surface)' }}
+                              >
+                                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: type.color + '20', color: type.color }}>
+                                  {React.cloneElement(type.icon, { size: 18 })}
+                                </div>
+                                <span className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>{type.label}</span>
+                                <span className="text-[9px] text-center leading-tight" style={{ color: 'var(--text-tertiary)' }}>{type.description}</span>
+                                {alreadyAdded && (
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded-full font-bold" style={{ backgroundColor: type.color + '20', color: type.color }}>+1</span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </section>
                     )}
+
+                    {/* Standalone Files (orphan) */}
                     {orphanFiles.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>Standalone Files ({orphanFiles.length})</h4>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <section>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: '#6366f115', color: '#6366f1' }}>
+                              <FileIcon size={14} />
+                            </div>
+                            <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text)' }}>
+                              Standalone Files
+                            </h3>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#6366f120', color: '#6366f1' }}>
+                              {orphanFiles.length}
+                            </span>
+                          </div>
+                          <ViewToggle mode={sourceViewMode} onChange={setSourceViewMode} />
+                        </div>
+                        <div className={sourceViewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : sourceViewMode === 'stack' ? 'flex flex-col gap-0.5' : 'flex flex-col gap-2'}>
                           {orphanFiles.map((file) => (
                             <FileCard
                               key={file.id}
@@ -3000,10 +3486,12 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                               onView={handleViewFile}
                               onEmbed={handleEmbedFile}
                               isEmbedding={isEmbedding}
+                              onRename={handleRenameFile}
+                              viewMode={sourceViewMode}
                             />
                           ))}
                         </div>
-                      </div>
+                      </section>
                     )}
                   </div>
                 )

@@ -144,8 +144,16 @@ class KBFileAdd(BaseModel):
     name: str
     content: str = ""
     file_type: str = "text"
-    content_url: str = ""  # For web/API type KBs
+    content_url: str = ""
     metadata: dict = {}
+
+
+class KBFileRename(BaseModel):
+    name: str
+
+
+class KBSourceRename(BaseModel):
+    name: str
 
 
 class KBScrapeUrl(BaseModel):
@@ -942,6 +950,31 @@ async def remove_kb_file(kb_id: str, file_id: str):
     """Remove a file from a knowledge base."""
     success = remove_file_from_knowledge_base(kb_id, file_id)
     return {"status": "ok" if success else "not_found"}
+
+
+@app.patch("/api/knowledge/{kb_id}/files/{file_id}/rename")
+async def rename_kb_file(kb_id: str, file_id: str, req: KBFileRename):
+    """Rename a file in a knowledge base."""
+    updated = update_file_in_knowledge_base(kb_id, file_id, {"name": req.name})
+    if not updated:
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    return {"status": "ok", "id": updated.id, "name": updated.name}
+
+
+@app.patch("/api/knowledge/{kb_id}/sources/{source_id}/rename")
+async def rename_kb_source(kb_id: str, source_id: str, req: KBSourceRename):
+    """Rename a source in a knowledge base."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    sources = kb.config.get("sources", [])
+    source = next((s for s in sources if s.get("id") == source_id), None)
+    if not source:
+        return JSONResponse({"error": "Source not found"}, status_code=404)
+    source["name"] = req.name
+    kb.config["sources"] = sources
+    update_knowledge_base(kb)
+    return {"status": "ok", "id": source_id, "name": req.name}
 
 
 @app.post("/api/knowledge/{kb_id}/upload")
