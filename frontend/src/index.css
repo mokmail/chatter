@@ -30,7 +30,7 @@
   --border: rgba(255, 255, 255, 0.06);
   --border-hover: rgba(255, 255, 255, 0.12);
   --border-active: rgba(255, 255, 255, 0.18);
-  --border-glow: rgba(139, 92, 246, 0.3);
+  --border-glow: rgba(255, 255, 255, 0.15);
   
   /* Text - Pure whites to subtle grays */
   --text: #fafafa;
@@ -38,16 +38,16 @@
   --text-tertiary: #6b6b7b;
   --text-muted: #4a4a5a;
   
-  /* Accent - Vibrant purple-blue gradient palette */
+  /* Accent - Sleek black and dark gray palette */
   --accent: #ffffff;
-  --accent-primary: #8b5cf6;
-  --accent-secondary: #6366f1;
-  --accent-tertiary: #ec4899;
-  --accent-cyan: #06b6d4;
-  --accent-hover: #a78bfa;
-  --accent-subtle: rgba(139, 92, 246, 0.08);
-  --accent-glow: rgba(139, 92, 246, 0.4);
-  --accent-glow-strong: rgba(139, 92, 246, 0.6);
+  --accent-primary: #ffffff;
+  --accent-secondary: #e5e7eb;
+  --accent-tertiary: #9ca3af;
+  --accent-cyan: #d1d5db;
+  --accent-hover: #f3f4f6;
+  --accent-subtle: rgba(255, 255, 255, 0.08);
+  --accent-glow: rgba(255, 255, 255, 0.2);
+  --accent-glow-strong: rgba(255, 255, 255, 0.4);
   
   /* Semantic Colors */
   --success: #10b981;
@@ -74,8 +74,8 @@
   --shadow-md: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
   --shadow-lg: 0 8px 30px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
   --shadow-xl: 0 20px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
-  --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.25);
-  --shadow-glow-sm: 0 0 20px rgba(139, 92, 246, 0.15);
+  --shadow-glow: 0 0 40px rgba(255, 255, 255, 0.1);
+  --shadow-glow-sm: 0 0 20px rgba(255, 255, 255, 0.05);
   --shadow-inner: inset 0 2px 4px rgba(0,0,0,0.3);
   
   /* Scrollbar */
@@ -98,18 +98,18 @@
   /* Background Effects */
   --shimmer-color: rgba(255, 255, 255, 0.03);
   --grid-line: rgba(255, 255, 255, 0.025);
-  --mesh-color-1: rgba(139, 92, 246, 0.08);
-  --mesh-color-2: rgba(99, 102, 241, 0.06);
-  --mesh-color-3: rgba(236, 72, 153, 0.04);
-  --aurora-1: rgba(139, 92, 246, 0.15);
-  --aurora-2: rgba(99, 102, 241, 0.1);
-  --aurora-3: rgba(236, 72, 153, 0.08);
-  --aurora-4: rgba(6, 182, 212, 0.06);
+  --mesh-color-1: rgba(255, 255, 255, 0.05);
+  --mesh-color-2: rgba(200, 200, 200, 0.04);
+  --mesh-color-3: rgba(150, 150, 150, 0.03);
+  --aurora-1: rgba(255, 255, 255, 0.1);
+  --aurora-2: rgba(200, 200, 200, 0.08);
+  --aurora-3: rgba(150, 150, 150, 0.06);
+  --aurora-4: rgba(100, 100, 100, 0.04);
   
   /* Chat Bubbles */
   --user-bubble-bg: linear-gradient(135deg, #1e1e2e 0%, #16161f 50%, #12121a 100%);
-  --user-bubble-border: rgba(139, 92, 246, 0.2);
-  --user-bubble-shadow: 0 8px 32px rgba(139, 92, 246, 0.15), 0 0 0 1px rgba(139, 92, 246, 0.1);
+  --user-bubble-border: rgba(255, 255, 255, 0.1);
+  --user-bubble-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --ai-bubble-bg: transparent;
   --ai-avatar-bg: linear-gradient(135deg, #1e1e2e 0%, #16161f 100%);
   --ai-avatar-border: rgba(255,255,255,0.08);
@@ -117,8 +117,8 @@
   
   /* Attachment Colors */
   --note-text: #a0a0b0;
-  --note-icon: #8b5cf6;
-  --note-bg: rgba(139, 92, 246, 0.1);
+  --note-icon: #ffffff;
+  --note-bg: rgba(255, 255, 255, 0.08);
   --file-text: #a0a0b0;
   --file-icon: #3b82f6;
   --file-bg: rgba(59, 130, 246, 0.1);
@@ -127,9 +127,9 @@
   --agent-bg: rgba(245, 158, 11, 0.1);
   
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #ec4899 100%);
+  --gradient-primary: linear-gradient(135deg, #ffffff 0%, #d1d5db 50%, #9ca3af 100%);
   --gradient-surface: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
-  --gradient-radial-accent: radial-gradient(ellipse at top, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
+  --gradient-radial-accent: radial-gradient(ellipse at top, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
   --gradient-header: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
 }
 
@@ -154,7 +154,7 @@
   --border: #e2e8f0;
   --border-hover: #cbd5e1;
   --border-active: #94a3b8;
-  --border-glow: rgba(139, 92, 246, 0.2);
+  --border-glow: rgba(0, 0, 0, 0.08);
   
   /* Text */
   --text: #0f172a;
@@ -162,16 +162,16 @@
   --text-tertiary: #64748b;
   --text-muted: #94a3b8;
   
-  /* Accent - Vibrant purple-blue */
-  --accent: #0f172a;
-  --accent-primary: #7c3aed;
-  --accent-secondary: #6366f1;
-  --accent-tertiary: #db2777;
-  --accent-cyan: #0891b2;
-  --accent-hover: #6d28d9;
-  --accent-subtle: rgba(124, 58, 237, 0.08);
-  --accent-glow: rgba(124, 58, 237, 0.2);
-  --accent-glow-strong: rgba(124, 58, 237, 0.35);
+  /* Accent - Solid black and gray */
+  --accent: #000000;
+  --accent-primary: #111827;
+  --accent-secondary: #374151;
+  --accent-tertiary: #6b7280;
+  --accent-cyan: #9ca3af;
+  --accent-hover: #000000;
+  --accent-subtle: rgba(0, 0, 0, 0.05);
+  --accent-glow: rgba(0, 0, 0, 0.1);
+  --accent-glow-strong: rgba(0, 0, 0, 0.2);
   
   /* Semantic Colors */
   --success: #059669;
@@ -191,8 +191,8 @@
   --shadow-md: 0 4px 12px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.02);
   --shadow-lg: 0 8px 24px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03);
   --shadow-xl: 0 20px 40px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
-  --shadow-glow: 0 0 30px rgba(124, 58, 237, 0.15);
-  --shadow-glow-sm: 0 0 15px rgba(124, 58, 237, 0.1);
+  --shadow-glow: 0 0 30px rgba(0, 0, 0, 0.1);
+  --shadow-glow-sm: 0 0 15px rgba(0, 0, 0, 0.05);
   --shadow-inner: inset 0 2px 4px rgba(0,0,0,0.03);
   
   /* Scrollbar */
@@ -214,18 +214,18 @@
   /* Background Effects */
   --shimmer-color: rgba(0, 0, 0, 0.02);
   --grid-line: rgba(0, 0, 0, 0.04);
-  --mesh-color-1: rgba(124, 58, 237, 0.05);
-  --mesh-color-2: rgba(99, 102, 241, 0.04);
-  --mesh-color-3: rgba(219, 39, 119, 0.03);
-  --aurora-1: rgba(124, 58, 237, 0.1);
-  --aurora-2: rgba(99, 102, 241, 0.08);
-  --aurora-3: rgba(219, 39, 119, 0.06);
-  --aurora-4: rgba(8, 145, 178, 0.04);
+  --mesh-color-1: rgba(0, 0, 0, 0.03);
+  --mesh-color-2: rgba(50, 50, 50, 0.02);
+  --mesh-color-3: rgba(100, 100, 100, 0.01);
+  --aurora-1: rgba(0, 0, 0, 0.05);
+  --aurora-2: rgba(50, 50, 50, 0.04);
+  --aurora-3: rgba(100, 100, 100, 0.03);
+  --aurora-4: rgba(150, 150, 150, 0.02);
   
   /* Chat Bubbles */
   --user-bubble-bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-  --user-bubble-border: rgba(124, 58, 237, 0.15);
-  --user-bubble-shadow: 0 4px 16px rgba(124, 58, 237, 0.1), 0 0 0 1px rgba(124, 58, 237, 0.08);
+  --user-bubble-border: rgba(0, 0, 0, 0.1);
+  --user-bubble-shadow: 0 4px 16px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.04);
   --ai-bubble-bg: transparent;
   --ai-avatar-bg: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   --ai-avatar-border: rgba(0,0,0,0.06);
@@ -233,8 +233,8 @@
   
   /* Attachment Colors */
   --note-text: #475569;
-  --note-icon: #7c3aed;
-  --note-bg: rgba(124, 58, 237, 0.08);
+  --note-icon: #111827;
+  --note-bg: rgba(0, 0, 0, 0.05);
   --file-text: #475569;
   --file-icon: #2563eb;
   --file-bg: rgba(37, 99, 235, 0.08);
@@ -243,9 +243,9 @@
   --agent-bg: rgba(217, 119, 6, 0.08);
   
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #db2777 100%);
+  --gradient-primary: linear-gradient(135deg, #000000 0%, #374151 50%, #6b7280 100%);
   --gradient-surface: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, transparent 100%);
-  --gradient-radial-accent: radial-gradient(ellipse at top, rgba(124, 58, 237, 0.08) 0%, transparent 50%);
+  --gradient-radial-accent: radial-gradient(ellipse at top, rgba(0, 0, 0, 0.05) 0%, transparent 50%);
   --gradient-header: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
 }
 
@@ -290,6 +290,13 @@ body {
 ::selection {
   background: var(--selection-bg);
   color: var(--selection-color);
+}
+
+/* Touch device visibility for message actions */
+@media (hover: none) and (pointer: coarse) {
+  .touch-visible {
+    opacity: 1 !important;
+  }
 }
 
 /* ============================================
@@ -412,6 +419,26 @@ body {
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(20px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes backdrop-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes backdrop-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes slide-up-sm {

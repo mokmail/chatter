@@ -33,7 +33,7 @@ class NotesStore:
     """File-based notes storage."""
 
     def __init__(self):
-        self.dir_path = Path.home() / ".chatter" / "notes"
+        self.dir_path = Path.home() / ".cio-intelligence-hub" / "notes"
         self.dir_path.mkdir(parents=True, exist_ok=True)
 
     def _note_file(self, note_id: str) -> Path:

@@ -2,7 +2,7 @@
 
 ## Context
 
-Open WebUI's Artifacts feature displays standalone, renderable content (HTML websites, SVG graphics, ThreeJS/D3.js visualizations) in a dedicated panel to the right of the chat, enabling iterative editing, version tracking, and full rewrites via natural language. Chatter already has basic HTML preview in code blocks — this extends that into a first-class Artifacts system.
+Open WebUI's Artifacts feature displays standalone, renderable content (HTML websites, SVG graphics, ThreeJS/D3.js visualizations) in a dedicated panel to the right of the chat, enabling iterative editing, version tracking, and full rewrites via natural language. CIO Intelligence Hub already has basic HTML preview in code blocks — this extends that into a first-class Artifacts system.
 
 ## Goals
 

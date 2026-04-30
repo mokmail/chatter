@@ -2,7 +2,7 @@ import os
 import json
 from pathlib import Path
 
-knowledge_dir = Path.home() / ".chatter" / "knowledge"
+knowledge_dir = Path.home() / ".cio-intelligence-hub" / "knowledge"
 if not knowledge_dir.exists():
     print("Knowledge directory not found")
     exit(0)

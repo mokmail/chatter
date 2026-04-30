@@ -2,11 +2,11 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: chatter-backend
+    container_name: cio-intelligence-hub-backend
     ports:
       - "8000:8000"
     volumes:
-      - chatter-data:/root/.chatter
+      - cio-intelligence-hub-data:/root/.cio-intelligence-hub
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -17,7 +17,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    container_name: chatter-frontend
+    container_name: cio-intelligence-hub-frontend
     ports:
       - "5173:80"
     depends_on:
@@ -25,4 +25,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  chatter-data:
+  cio-intelligence-hub-data:

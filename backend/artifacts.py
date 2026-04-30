@@ -1,4 +1,4 @@
-"""Artifact detection, storage, and versioning for Chatter."""
+"""Artifact detection, storage, and versioning for CIO Intelligence Hub."""
 import json
 import re
 import uuid

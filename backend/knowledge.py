@@ -37,7 +37,7 @@ class KnowledgeBase(BaseModel):
     id: str = ""
     name: str
     description: str = ""
-    kb_type: Literal["text", "files", "vectorstore", "web", "api", "notes"] = "text"
+    kb_type: Literal["knowledge", "vectorstore"] = "knowledge"
     retrieval_mode: Literal["focused", "full"] = "focused"
     hybrid_search: bool = True
     reranking: bool = True
@@ -65,7 +65,7 @@ class KnowledgeStore:
     """File-based knowledge base storage."""
 
     def __init__(self):
-        self.dir_path = Path.home() / ".chatter" / "knowledge"
+        self.dir_path = Path.home() / ".cio-intelligence-hub" / "knowledge"
         self.dir_path.mkdir(parents=True, exist_ok=True)
 
     def _kb_file(self, kb_id: str) -> Path:
@@ -77,6 +77,11 @@ class KnowledgeStore:
         for f in self.dir_path.glob("*.json"):
             try:
                 data = json.loads(f.read_text())
+                # Migration: Convert old types to new unified type
+                old_types = {"text", "files", "web", "api", "notes", "document"}
+                if data.get("kb_type") in old_types:
+                    data["kb_type"] = "knowledge"
+                    f.write_text(json.dumps(data, indent=2))
                 kbs.append(KnowledgeBase(**data))
             except Exception as e:
                 print(f"Error loading knowledge base from {f}: {e}")
@@ -89,11 +94,17 @@ class KnowledgeStore:
             return None
         return KnowledgeBase(**json.loads(path.read_text()))
 
-    def create(self, name: str, description: str = "", kb_type: str = "text", config: dict = None, kb_id: str = None) -> KnowledgeBase:
+    def create(self, name: str, description: str = "", kb_type: str = "knowledge", config: dict = None, kb_id: str = None) -> KnowledgeBase:
         """Create a new knowledge base."""
         kwargs = {"name": name, "description": description, "kb_type": kb_type, "config": config or {}}
         if kb_id:
             kwargs["id"] = kb_id
+        
+        # Migration: Convert old types to new unified type
+        old_types = {"text", "files", "web", "api", "notes", "document"}
+        if kwargs.get("kb_type") in old_types:
+            kwargs["kb_type"] = "knowledge"
+        
         kb = KnowledgeBase(**kwargs)
         self._save(kb)
         return kb
@@ -145,6 +156,17 @@ class KnowledgeStore:
         self.update(kb)
         return True
 
+    def remove_files_by_source(self, kb_id: str, source_id: str) -> list[str]:
+        """Remove all files belonging to a source. Returns list of removed file IDs."""
+        kb = self.get(kb_id)
+        if not kb:
+            return []
+        removed_ids = [f.id for f in kb.files if f.metadata.get("source_id") == source_id]
+        if removed_ids:
+            kb.files = [f for f in kb.files if f.metadata.get("source_id") != source_id]
+            self.update(kb)
+        return removed_ids
+
     def _save(self, kb: KnowledgeBase) -> None:
         """Save knowledge base to file."""
         path = self._kb_file(kb.id)
@@ -168,7 +190,7 @@ def get_knowledge_base(kb_id: str) -> KnowledgeBase | None:
     return _store.get(kb_id)
 
 
-def create_knowledge_base(name: str, description: str = "", kb_type: str = "text", config: dict = None, kb_id: str = None) -> KnowledgeBase:
+def create_knowledge_base(name: str, description: str = "", kb_type: str = "knowledge", config: dict = None, kb_id: str = None) -> KnowledgeBase:
     """Create a new knowledge base."""
     return _store.create(name, description, kb_type, config, kb_id)
 
@@ -196,3 +218,8 @@ def update_file_in_knowledge_base(kb_id: str, file_id: str, updates: dict) -> KB
 def remove_file_from_knowledge_base(kb_id: str, file_id: str) -> bool:
     """Remove a file from a knowledge base."""
     return _store.remove_file(kb_id, file_id)
+
+
+def remove_files_by_source(kb_id: str, source_id: str) -> list[str]:
+    """Remove all files belonging to a source from a knowledge base."""
+    return _store.remove_files_by_source(kb_id, source_id)

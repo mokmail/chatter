@@ -2,7 +2,7 @@
 
 ## Context
 
-Open WebUI provides a comprehensive system for managing and navigating previous conversations. Chatter already has basic session/chat history via `/api/sessions`, but lacks: global fuzzy search across titles and message content, unread indicators, auto-generated titles, archival, per-chat read state, native tool-calling for agentic search, and import/export.
+Open WebUI provides a comprehensive system for managing and navigating previous conversations. CIO Intelligence Hub already has basic session/chat history via `/api/sessions`, but lacks: global fuzzy search across titles and message content, unread indicators, auto-generated titles, archival, per-chat read state, native tool-calling for agentic search, and import/export.
 
 ## Goals
 

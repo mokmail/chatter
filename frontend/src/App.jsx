@@ -1,9 +1,13 @@
+// Root application component. Manages page routing, global state, and coordinates
+// between chat, notes, knowledge bases, search, documentation, and settings views.
+// Uses a custom useChat hook for all backend communication and session management.
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import ChatMessage from './components/ChatMessage'
 import ChatInput from './components/ChatInput'
 
+import SearchPage from './components/SearchPage'
 import SettingsPage from './components/SettingsPage'
 import FollowUpPrompts from './components/FollowUpPrompts'
 import ArtifactsPanel from './components/ArtifactsPanel'
@@ -14,11 +18,14 @@ import Notes from './components/Notes'
 import NoteTypes from './components/NoteTypes'
 import ShareModal from './components/ShareModal'
 import SaveToKnowledgeModal from './components/SaveToKnowledgeModal'
+import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp'
+import DateSeparator from './components/DateSeparator'
 import { useChat } from './hooks/useChat'
 import { ThemeProvider } from './hooks/useTheme'
 import { extractArtifact } from './components/ArtifactsPanel'
 import axios from 'axios'
 import {
+  SearchIcon,
   ChatIcon,
   KnowledgeIcon,
   NotesIcon,
@@ -26,40 +33,20 @@ import {
   SettingsIcon,
 } from './components/common/Icons'
 
+// Navigation pages shown in the sidebar. Each has an id (used for routing), label, icon, and component key.
 const PAGES = [
-  {
-    id: 'chat',
-    label: 'Chat',
-    icon: <ChatIcon size={18} />,
-    component: 'chat',
-  },
-  {
-    id: 'knowledge',
-    label: 'Knowledge',
-    icon: <KnowledgeIcon size={18} />,
-    component: 'knowledge',
-  },
-  {
-    id: 'notes',
-    label: 'Notes',
-    icon: <NotesIcon size={18} />,
-    component: 'notes',
-  },
-  {
-    id: 'documentation',
-    label: 'Docs',
-    icon: <DocumentationIcon size={18} />,
-    component: 'documentation',
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: <SettingsIcon size={18} />,
-    component: 'settings',
-  },
+  { id: 'search', label: 'Search Gate', icon: <SearchIcon size={18} />, component: 'search' },
+  { id: 'chat', label: 'Chat', icon: <ChatIcon size={18} />, component: 'chat' },
+  { id: 'knowledge', label: 'Knowledge Bases', icon: <KnowledgeIcon size={18} />, component: 'knowledge' },
+  { id: 'notes', label: 'Notes', icon: <NotesIcon size={18} />, component: 'notes' },
+  { id: 'documentation', label: 'Docs', icon: <DocumentationIcon size={18} />, component: 'documentation' },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} />, component: 'settings' },
 ]
 
+// Inner app component wrapped by ThemeProvider. Contains all page routing, state management,
+// and action handlers for chat messages, sessions, follow-ups, and modals.
 function AppInner() {
+  // Chat state and actions from custom hook - handles all backend communication
   const {
     messages,
     models,
@@ -78,6 +65,7 @@ function AppInner() {
     updateActiveSelection,
     currentProviderId,
     sessionKnowledgeBases,
+    sessionKnowledgeBaseId,
     editMessage,
     deleteMessage,
     evaluateMessage,
@@ -105,11 +93,12 @@ function AppInner() {
     setActiveArtifact,
   } = useChat()
 
+  // Local UI state
   const [showShare, setShowShare] = useState(false)
   const [shareTarget, setShareTarget] = useState(null)
   const [showSaveToKnowledge, setShowSaveToKnowledge] = useState(false)
   const [saveToKnowledgeTarget, setSaveToKnowledgeTarget] = useState(null)
-  const [activePage, setActivePage] = useState('chat')
+  const [activePage, setActivePage] = useState('search')
   const [knowledgeBases, setKnowledgeBases] = useState([])
   const [editingMessage, setEditingMessage] = useState(null)
   const [editText, setEditText] = useState('')
@@ -117,6 +106,7 @@ function AppInner() {
   const [copiedTimeout, setCopiedTimeout] = useState(null)
   const [sessionActionTarget, setSessionActionTarget] = useState(null)
   const [toast, setToast] = useState(null)
+  // Persist sidebar collapsed state in localStorage
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     try {
@@ -130,19 +120,26 @@ function AppInner() {
   const [searchResults, setSearchResults] = useState([])
   const [highlightMessage, setHighlightMessage] = useState(null)
   const [followupLoading, setFollowupLoading] = useState({})
+  const [showScrollButton, setShowScrollButton] = useState(false)
+  const [hasNewMessages, setHasNewMessages] = useState(false)
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const messagesEndRef = useRef(null)
   const chatInputRef = useRef(null)
+  const messagesContainerRef = useRef(null)
 
+  // Follow-up prompt behavior flags, read from config with safe defaults
   const followupSettings = {
     autoGenerate: config?.followup_auto_generate ?? true,
     keepInChat: config?.followup_keep_in_chat ?? false,
     insertToInput: config?.followup_insert_to_input ?? false,
   }
 
+  // Persist sidebar state
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', JSON.stringify(sidebarCollapsed))
   }, [sidebarCollapsed])
 
+  // Fetch all knowledge bases from the backend
   const loadKnowledgeBases = useCallback(async () => {
     try {
       const res = await fetch('/api/knowledge')
@@ -159,7 +156,80 @@ function AppInner() {
   }, [])
 
   useEffect(() => { loadKnowledgeBases() }, [loadKnowledgeBases])
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  // Handle /notes/new?title=...&content=... URL - fires create-note-from-url event
+  useEffect(() => {
+    const path = window.location.pathname
+    const notesMatch = path.match(/^\/notes\/new(?:\?.*)?$/i)
+    if (notesMatch) {
+      const params = new URLSearchParams(window.location.search)
+      const title = params.get('title') || ''
+      const content = params.get('content') || ''
+      const note_type = params.get('type') || 'rich'
+      setActivePage('notes')
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('create-note-from-url', {
+          detail: { title, content, note_type }
+        }))
+      }, 100)
+      window.history.replaceState({}, '', '/notes')
+    }
+  }, [])
+
+  useEffect(() => {
+    const path = window.location.pathname
+    if (path === '/' || path === '/search') {
+      setActivePage('search')
+      window.history.replaceState({}, '', '/search')
+    }
+  }, [])
+
+  useEffect(() => {
+    const path = window.location.pathname
+    const noteIdMatch = path.match(/^\/notes\/([^\/?]+)/i)
+    if (noteIdMatch) {
+      const noteId = noteIdMatch[1]
+      setActivePage('notes')
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('open-note-from-url', {
+          detail: { noteId }
+        }))
+      }, 100)
+      window.history.replaceState({}, '', '/notes')
+    }
+  }, [])
+
+  // Auto-scroll when new messages arrive, but only if user is near the bottom.
+  // If scrolled up reading history, show a "new messages" indicator instead.
+  useEffect(() => {
+    if (!messagesContainerRef.current || !messagesEndRef.current) return
+    const container = messagesContainerRef.current
+    const scrollThreshold = 150 // pixels from bottom
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < scrollThreshold
+
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      setHasNewMessages(false)
+    } else {
+      setHasNewMessages(true)
+    }
+  }, [messages])
+
+  // Scroll detection for scroll-to-bottom button
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const scrollThreshold = 200
+      const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > scrollThreshold
+      setShowScrollButton(isScrolledUp)
+      if (!isScrolledUp) setHasNewMessages(false)
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
   useEffect(() => {
     if (!toast) return
 
@@ -171,7 +241,14 @@ function AppInner() {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        setShowSearch(prev => !prev)
+        setActivePage('search')
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault()
+        setShowKeyboardHelp(prev => !prev)
+      }
+      if (e.key === 'Escape') {
+        setShowKeyboardHelp(false)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -240,43 +317,49 @@ function AppInner() {
   }, [sessionActionTarget])
 
   const handleClearHistory = () => {
-    if (window.confirm('Clear all chat history?')) {
-      clearHistory()
-    }
+    clearHistory()
   }
 
-  const handlePageSelect = (pageId) => { setActivePage(pageId) }
+  const handlePageSelect = (pageId) => {
+    setActivePage(pageId)
+    const pathMap = { search: '/search', chat: '/chat', knowledge: '/knowledge', notes: '/notes', documentation: '/docs', settings: '/settings' }
+    window.history.replaceState({}, '', pathMap[pageId] || '/')
+  }
 
-  // ---- Action Handlers ----
+  // ---- Message Action Handlers (edit, copy, evaluate, branch, fork, delete, regenerate) ----
 
+  // Start editing a message - stores the message ID and current content
   const handleEdit = (msgId, content) => {
     setEditingMessage(msgId)
     setEditText(content)
   }
 
+  // Save an edited message: calls the edit API to truncate history, then re-sends the prompt.
+  // Uses parentId to maintain the conversation tree, and skipAddUser=true to avoid duplicating.
   const handleEditSave = async () => {
     if (!editingMessage || !editText.trim()) return
     const originalMsg = messages.find(m => m.id === editingMessage)
     if (!originalMsg) return
-    
+
     const parentId = originalMsg.parentId || null
     const editedContent = editText
-    
+
     setEditingMessage(null)
     setEditText('')
-    
-    // Call the dedicated edit API - this removes messages after the edited one on server
+
     await editMessage(editingMessage, editedContent)
 
-    // Send the edited prompt but DO NOT add a new local user message (it already exists/was updated by editMessage)
+    // Re-send without adding a duplicate user message
     await sendMessage(editedContent, [], [], [], parentId, true)
   }
 
+  // Cancel editing - reset state without saving
   const handleEditCancel = () => {
     setEditingMessage(null)
     setEditText('')
   }
 
+  // Copy message content to clipboard with a 2s visual confirmation
   const handleCopy = async (content) => {
     const ok = await copyToClipboard(content)
     if (ok) {
@@ -287,40 +370,28 @@ function AppInner() {
     }
   }
 
-  const handleEvaluate = async (msgId, rating) => {
-    await evaluateMessage(msgId, rating)
-  }
+  const handleEvaluate = async (msgId, rating) => { await evaluateMessage(msgId, rating) }
+  const handleBranch = async (msgId) => { await branchFromMessage(msgId) }
+  const handleFork = async (msgId) => { await forkFromMessage(msgId) }
 
-  const handleBranch = async (msgId) => {
-    await branchFromMessage(msgId)
-  }
-
-  const handleFork = async (msgId) => {
-    await forkFromMessage(msgId)
-  }
-
+  // Request the assistant to continue a truncated response
   const handleContinue = async () => {
     await sendMessage('Continue the response from where you left off.', [], [], [])
   }
 
+  // Remove the last assistant message and re-send the user's prompt for a fresh response
   const handleRegenerate = async () => {
     const removed = await regenerateMessage()
     if (!removed) return
-    
-    // Find parentId of the removed message if possible
-    // In many cases, it's the message before the one we removed
-    // Or we rely on the backend state
     await sendMessage(removed.content || 'Please regenerate the previous response.', [], [], [], removed.parentId || null)
     await loadSessions()
   }
 
-  const handleDelete = async (msgId) => {
-    await deleteMessage(msgId)
-  }
+  const handleDelete = async (msgId) => { await deleteMessage(msgId) }
 
+  // Switch to a different chat session, clearing follow-up state to prevent stale data
   const handleSwitchSession = async (sessionId) => {
     await switchSession(sessionId)
-    // Clear follow-ups when switching sessions to prevent stale suggestions
     setFollowups({})
     setFollowupLoading({})
   }
@@ -387,7 +458,8 @@ function AppInner() {
     setSessionActionTarget(null)
   }
 
-  // ---- Follow-up Handlers ----
+  // ---- Follow-up Prompt Handlers ----
+  // If insertToInput mode: fills the input field. Otherwise: sends immediately.
   const handleFollowupSelect = (text) => {
     if (followupSettings.insertToInput) {
       chatInputRef.current?.setValue(text)
@@ -402,7 +474,8 @@ function AppInner() {
     setFollowupLoading(prev => ({ ...prev, [messageId]: false }))
   }
 
-  // Auto-generate follow-ups when streaming completes
+  // Auto-generate follow-up prompts when the assistant finishes streaming.
+  // Debounced 300ms to ensure content is fully written. Skips if already generated.
   useEffect(() => {
     if (!followupSettings.autoGenerate || isStreaming) return
     if (messages.length === 0) return
@@ -426,6 +499,7 @@ function AppInner() {
     return () => clearTimeout(timer)
   }, [highlightMessage])
 
+  // Returns UI metadata (title, description, button labels/styles) for session action confirmation modals
   const getSessionActionMeta = (action) => {
     switch (action?.type) {
       case 'archive':
@@ -602,27 +676,44 @@ function AppInner() {
         onDeleteAllSessions={handleDeleteAllSessions}
         onExportSession={handleExportSession}
         onUpdateSession={handleUpdateSession}
-        onSearchClick={() => setShowSearch(true)}
+        onSearchClick={() => setActivePage('search')}
+        onClearHistory={handleClearHistory}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <Header
-          onClearHistory={handleClearHistory}
-          title={currentModel || 'BEV Intelligence'}
+          title={currentModel || 'CIO Intelligence Hub'}
           models={models}
           currentModel={currentModel}
           currentProviderId={currentProviderId}
           onModelSelect={updateActiveSelection}
-          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-          collapsed={sidebarCollapsed}
         />
 
-        {activePage === 'documentation' ? (
+        {activePage === 'search' ? (
+          <SearchPage
+            onNavigateToChat={(sessionId, messageIndex) => {
+              handleSwitchSession(sessionId)
+              setActivePage('chat')
+              if (messageIndex !== null && messageIndex !== undefined) {
+                setHighlightMessage({ index: messageIndex, query: '' })
+              }
+            }}
+            onNavigateToNote={(noteId) => {
+              setActivePage('notes')
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('open-note-from-url', { detail: { noteId } }))
+              }, 100)
+            }}
+            onNavigateToKnowledge={() => {
+              setActivePage('knowledge')
+            }}
+          />
+        ) : activePage === 'documentation' ? (
           <Documentation />
         ) : activePage === 'knowledge' ? (
-          <KnowledgeBase onRefresh={loadKnowledgeBases} />
+          <KnowledgeBase onRefresh={loadKnowledgeBases} models={models} />
         ) : activePage === 'notes' ? (
           <Notes />
         ) : activePage === 'settings' ? (
@@ -635,7 +726,7 @@ function AppInner() {
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Messages Area */}
-            <main className="flex-1 overflow-y-auto relative">
+            <main ref={messagesContainerRef} className="flex-1 overflow-y-auto relative">
               <div className="max-w-4xl mx-auto px-6 py-10 space-y-10">
                 {copiedId && (
                   <div className="flex items-center gap-2 text-xs animate-fade-in px-3 py-2 rounded-lg"
@@ -680,24 +771,62 @@ function AppInner() {
                     </p>
                     
                     {/* Action Buttons */}
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 mb-8">
                       <button onClick={() => setActivePage('settings')}
-                        className="flex items-center gap-2 text-sm px-7 py-3.5 rounded-xl font-semibold transition-all duration-300 hover:scale-105 active:scale-95 glow-accent-sm group"
-                        style={{ background: 'var(--gradient-primary)', color: 'white' }}>
+                        className="flex items-center gap-2 text-sm px-7 py-3.5 rounded-xl font-semibold transition-all duration-300 hover:scale-105 active:scale-95 group"
+                        style={{ background: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-45">
                           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                           <circle cx="12" cy="12" r="3"/>
                         </svg>
                         Set up Assistant
                       </button>
-                      <button onClick={() => setShowSearch(true)}
+                      <button onClick={() => setActivePage('search')}
                         className="flex items-center gap-2 text-sm px-7 py-3.5 rounded-xl font-semibold transition-all duration-300 hover:scale-105 active:scale-95 glass-button group">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <circle cx="11" cy="11" r="8"/>
                           <path d="m21 21-4.35-4.35"/>
                         </svg>
-                        Search History
+                        Search Gate
                       </button>
+                    </div>
+
+                    {/* Quick Action Chips */}
+                    <div className="w-full max-w-2xl">
+                      <p className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] mb-3 text-center">
+                        Try asking
+                      </p>
+                      <div className="flex flex-wrap justify-center gap-2">
+                        {[
+                          'Explain a complex topic',
+                          'Help me write code',
+                          'Summarize a document',
+                          'Brainstorm ideas',
+                          'Debug an error',
+                          'Create a plan',
+                        ].map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => sendMessage(suggestion, [], [], [])}
+                            className="px-4 py-2 rounded-full text-sm transition-all duration-200 hover:scale-105"
+                            style={{
+                              background: 'var(--surface)',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid var(--border)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = 'var(--accent-primary)'
+                              e.currentTarget.style.color = 'var(--text)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = 'var(--border)'
+                              e.currentTarget.style.color = 'var(--text-secondary)'
+                            }}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -710,8 +839,20 @@ function AppInner() {
                           : isLastAssistant && !isStreaming
                       )
                       const artifact = extractArtifact(msg.content)
+
+                      // Check if we should show a date separator
+                      const showDateSeparator = (() => {
+                        if (i === 0) return true
+                        const prevMsg = messages[i - 1]
+                        if (!prevMsg?.timestamp || !msg?.timestamp) return false
+                        const prevDate = new Date(prevMsg.timestamp * 1000).toDateString()
+                        const currDate = new Date(msg.timestamp * 1000).toDateString()
+                        return prevDate !== currDate
+                      })()
+
                       return (
                         <div key={`${msg.id}-${i}`}>
+                          {showDateSeparator && <DateSeparator timestamp={msg.timestamp} />}
                           <ChatMessage
                             message={msg}
                             isStreaming={i === messages.length - 1 && isStreaming && msg.role === 'assistant'}
@@ -735,6 +876,7 @@ function AppInner() {
                             onCancelEdit={handleEditCancel}
                             onShare={(msg) => { setShareTarget({ type: 'message', data: msg }); setShowShare(true) }}
                             onSaveToKnowledge={(msg) => { setSaveToKnowledgeTarget({ type: 'message', data: msg }); setShowSaveToKnowledge(true) }}
+                            currentModel={currentModel}
                           />
                           {shouldShowFollowups && (
                             <div className="max-w-[85%]">
@@ -811,6 +953,33 @@ function AppInner() {
 
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Scroll to Bottom Button */}
+              {showScrollButton && (
+                <button
+                  onClick={() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                    setHasNewMessages(false)
+                  }}
+                  className="absolute bottom-4 right-6 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg transition-all duration-300 hover:scale-105 z-20"
+                  style={{
+                    background: hasNewMessages ? 'var(--accent-primary)' : 'var(--surface)',
+                    color: hasNewMessages ? 'white' : 'var(--text-secondary)',
+                    border: `1px solid ${hasNewMessages ? 'var(--accent-primary)' : 'var(--border)'}`,
+                    boxShadow: 'var(--shadow-lg)',
+                  }}
+                >
+                  {hasNewMessages && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                      <span className="text-xs font-semibold">New</span>
+                    </span>
+                  )}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
             </main>
 
             {/* Input Area */}
@@ -820,8 +989,10 @@ function AppInner() {
                   <ChatInput
                     ref={chatInputRef}
                     onSend={(text, kbs, files, notes, agents) => {
-                      if (agents?.includes('notes-agent') || agents?.includes('coder')) {
-                        sendAgentMessage(text, true)
+                      if (agents?.includes('web-search')) {
+                        sendAgentMessage(text, false, true)
+                      } else if (agents?.includes('notes-agent') || agents?.includes('coder')) {
+                        sendAgentMessage(text, true, false)
                       } else {
                         sendMessage(text, kbs, files, notes)
                       }
@@ -831,6 +1002,7 @@ function AppInner() {
                   disabled={isStreaming}
                   knowledgeBases={knowledgeBases}
                   sessionKnowledgeBases={sessionKnowledgeBases}
+                  sessionKnowledgeBaseId={sessionKnowledgeBaseId}
                   onShare={() => setShowShare(true)}
                   hasMessages={messages.length > 0}
                 />
@@ -872,11 +1044,15 @@ function AppInner() {
         onCreateKB={() => { setShowSaveToKnowledge(false); setSaveToKnowledgeTarget(null); setActivePage('knowledge') }}
       />
 
-      
+      <KeyboardShortcutsHelp
+        isOpen={showKeyboardHelp}
+        onClose={() => setShowKeyboardHelp(false)}
+      />
     </div>
   )
 }
 
+// Root component - wraps the app in ThemeProvider so the theme is available everywhere
 function App() {
   return (
     <ThemeProvider>

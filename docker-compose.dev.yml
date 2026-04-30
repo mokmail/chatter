@@ -5,12 +5,12 @@ services:
       service: backend
     volumes:
       - ./backend:/app
-      - chatter-data:/root/.chatter
+      - cio-intelligence-hub-data:/root/.cio-intelligence-hub
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     image: node:20-slim
-    container_name: chatter-frontend-dev
+    container_name: cio-intelligence-hub-frontend-dev
     working_dir: /app
     ports:
       - "5175:5173"
@@ -25,7 +25,7 @@ services:
       - backend
 
 volumes:
-  chatter-data:
+  cio-intelligence-hub-data:
     driver: local
   frontend_node_modules:
     driver: local

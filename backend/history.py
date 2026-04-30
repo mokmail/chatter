@@ -20,6 +20,7 @@ class ChatMessage(BaseModel):
     parent_id: Optional[str] = None
     children_ids: list[str] = Field(default_factory=list)
     reasoning: str = ""
+    sources: list[dict] = Field(default_factory=list)
 
 
 class ChatSession(BaseModel):
@@ -27,6 +28,7 @@ class ChatSession(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     messages: list[ChatMessage] = Field(default_factory=list)
     knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_base_id: Optional[str] = None
     active_model: str = ""
     active_provider_id: str = ""
     created_at: float = Field(default_factory=time.time)
@@ -42,9 +44,9 @@ class ChatHistory:
     """File-based chat history storage with branching support."""
 
     def __init__(self):
-        self.sessions_dir = Path.home() / ".chatter" / "sessions"
+        self.sessions_dir = Path.home() / ".cio-intelligence-hub" / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        self.active_session_file = Path.home() / ".chatter" / "active_session.json"
+        self.active_session_file = Path.home() / ".cio-intelligence-hub" / "active_session.json"
         self._ensure_active_session()
 
     def _ensure_active_session(self):
@@ -89,6 +91,13 @@ class ChatHistory:
         self._set_active_id(session.id)
         return session
 
+    def create_kb_session(self, knowledge_base_id: str) -> ChatSession:
+        """Create a new chat session scoped to a specific knowledge base."""
+        session = ChatSession(knowledge_base_id=knowledge_base_id)
+        self._save_session(session)
+        self._set_active_id(session.id)
+        return session
+
     def _load_all_sessions(self) -> list[ChatSession]:
         sessions = []
         for path in self.sessions_dir.glob("*.json"):
@@ -116,10 +125,13 @@ class ChatHistory:
             self._set_active_id(session_id)
         return session
 
-    def list_sessions(self) -> list[dict]:
-        """List all available sessions."""
+    def list_sessions(self, knowledge_base_id: str | None = None) -> list[dict]:
+        """List all available sessions, optionally filtered by knowledge_base_id."""
         sessions = []
         for session in self._load_all_sessions():
+            if knowledge_base_id is not None:
+                if session.knowledge_base_id != knowledge_base_id:
+                    continue
             sessions.append({
                 "id": session.id,
                 "message_count": len(session.messages),
@@ -132,11 +144,12 @@ class ChatHistory:
                 "title": session.title,
                 "is_unread": session.is_unread,
                 "tags": session.tags,
+                "knowledge_base_id": session.knowledge_base_id,
             })
         sessions.sort(key=lambda s: (s["archived"], -s["created_at"]))
         return sessions
 
-    def add_message(self, role: str, content: str, knowledge_base_ids: list[str] = None, notes: list[str] = None, parent_id: str = None, reasoning: str = "") -> ChatMessage:
+    def add_message(self, role: str, content: str, knowledge_base_ids: list[str] = None, notes: list[str] = None, parent_id: str = None, reasoning: str = "", sources: list[dict] = None) -> ChatMessage:
         """Add a new message to the current session."""
         session = self.get_session()
         msg = ChatMessage(
@@ -146,6 +159,7 @@ class ChatHistory:
             notes=notes or [],
             parent_id=parent_id,
             reasoning=reasoning,
+            sources=sources or [],
         )
         if parent_id:
             parent = next((m for m in session.messages if m.id == parent_id), None)
@@ -220,6 +234,7 @@ class ChatHistory:
         new_session = ChatSession(
             messages=branch_messages,
             knowledge_base_ids=list(source_session.knowledge_base_ids),
+            knowledge_base_id=source_session.knowledge_base_id,
             active_model=source_session.active_model,
             active_provider_id=source_session.active_provider_id,
             branch_root_id=msg_id,
@@ -336,9 +351,9 @@ def get_history() -> list[ChatMessage]:
     return _history.get_messages()
 
 
-def add_to_history(role: str, content: str, knowledge_base_ids: list[str] = None, notes: list[str] = None, parent_id: str = None, reasoning: str = "") -> ChatMessage:
+def add_to_history(role: str, content: str, knowledge_base_ids: list[str] = None, notes: list[str] = None, parent_id: str = None, reasoning: str = "", sources: list[dict] = None) -> ChatMessage:
     """Add a message to history."""
-    return _history.add_message(role, content, knowledge_base_ids, notes, parent_id, reasoning)
+    return _history.add_message(role, content, knowledge_base_ids, notes, parent_id, reasoning, sources)
 
 
 def clear_history() -> None:
@@ -346,8 +361,8 @@ def clear_history() -> None:
     _history.clear()
 
 
-def list_sessions() -> list[dict]:
-    return _history.list_sessions()
+def list_sessions(knowledge_base_id: str | None = None) -> list[dict]:
+    return _history.list_sessions(knowledge_base_id=knowledge_base_id)
 
 
 def switch_session(session_id: str) -> Optional[ChatSession]:
@@ -409,6 +424,11 @@ def get_message_by_id(msg_id: str) -> Optional[ChatMessage]:
 def get_session_kbs() -> list[str]:
     """Get the KB IDs for the current session."""
     return _history.get_session_kbs()
+
+
+def create_kb_session(knowledge_base_id: str) -> ChatSession:
+    """Create a new chat session scoped to a specific knowledge base."""
+    return _history.create_kb_session(knowledge_base_id)
 
 
 def update_session_kb(kb_ids: list[str]) -> None:

@@ -81,7 +81,7 @@ graph LR
           Project Structure
         </h3>
         <pre className="text-xs leading-relaxed overflow-x-auto" style={{ color: 'var(--text-secondary)', fontFamily: "'Fira Code', monospace" }}>
-{`chatter/
+{`cio-intelligence-hub/
 ├── backend/
 │   ├── main.py          FastAPI app + all routes
 │   ├── config.py        Provider config management

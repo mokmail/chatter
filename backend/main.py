@@ -1,4 +1,4 @@
-"""Chatter - Open WebUI-inspired AI Chat Application."""
+"""CIO Intelligence Hub - Open WebUI-inspired AI Chat Application."""
 import json
 import uuid
 import time
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, Request, UploadFile, File
+from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -19,7 +19,7 @@ from history import (
     regenerate_last, get_last_message, get_message_by_id, get_session as get_chat_session, list_sessions,
     switch_session, delete_chat_session, archive_chat_session, archive_all_chat_sessions,
     delete_all_chat_sessions, update_session, mark_session_read, export_session, import_session,
-    search_history,
+    search_history, create_kb_session,
 )
 from knowledge import (
     create_knowledge_base,
@@ -30,20 +30,23 @@ from knowledge import (
     add_file_to_knowledge_base,
     update_file_in_knowledge_base,
     remove_file_from_knowledge_base,
+    remove_files_by_source,
 )
 from reasoning import ReasoningConfig, extract_reasoning, serialize_reasoning
-from vectorstore import add_to_vectorstore, get_kb_embeddings, delete_vectorstore, get_collection, retrieve_relevant_chunks
+from vectorstore import add_to_vectorstore, get_kb_embeddings, delete_vectorstore, delete_source_chunks, get_collection, retrieve_relevant_chunks
 from loaders import process_upload
+from source_processor import fetch_source
 from notes import (
     list_notes, get_note, create_note, update_note, delete_note, archive_note, search_notes,
     NOTE_TOOLS, execute_note_tool, add_note_message, get_note_chat_history, clear_note_chat_history
 )
 from code_executor import execute_code, create_session, delete_session, get_session_ids
+from web_search import WEB_SEARCH_TOOLS, execute_web_tool, search_web, fetch_url
 from followups import generate_followups
 from artifacts import detect_artifact_content, create_artifact, get_artifact, get_current_artifact, update_artifact, get_artifact_versions, switch_artifact_version
 
 
-app = FastAPI(title="Chatter", description="Open WebUI-inspired AI Chat Application")
+app = FastAPI(title="CIO Intelligence Hub", description="Open WebUI-inspired AI Chat Application")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -73,6 +76,7 @@ class ChatRequest(BaseModel):
     notes: list[str] = []
     parent_id: str | None = None
     regenerate: bool = False
+    no_history: bool = False
 
 
 class ConfigUpdate(BaseModel):
@@ -98,25 +102,12 @@ class ConfigUpdate(BaseModel):
     rag_hybrid_search: bool | None = None
     rag_reranking: bool | None = None
     rag_top_k: int | None = None
-    followup_auto_generate: bool | None = None
-    followup_keep_in_chat: bool | None = None
-    followup_insert_to_input: bool | None = None
-    iframe_same_origin: bool | None = None
-    artifacts_enabled: bool | None = None
-    artifacts_auto_open: bool | None = None
-    reasoning_enabled: bool | None = None
-    reasoning_mode: str | None = None
-    reasoning_custom_start: str | None = None
-    reasoning_custom_end: str | None = None
-    ollama_think: bool | None = None
-    reasoning_effort: str | None = None
-    rag_system_context: bool | None = None
-    rag_chunk_size: int | None = None
-    rag_chunk_overlap: int | None = None
-    rag_min_chunk_size: int | None = None
-    rag_hybrid_search: bool | None = None
-    rag_reranking: bool | None = None
-    rag_top_k: int | None = None
+    web_search_enabled: bool | None = None
+    web_search_provider: str | None = None
+    web_search_api_key: str | None = None
+    web_search_result_count: int | None = None
+    web_search_serpapi_base_url: str | None = None
+    web_search_searxng_base_url: str | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -134,7 +125,7 @@ class SearchRequest(BaseModel):
 class KBCreate(BaseModel):
     name: str
     description: str = ""
-    kb_type: str = "text"  # text, files, vectorstore, web, api, notes
+    kb_type: str = "knowledge"  # knowledge, vectorstore
 
 
 class KBUpdate(BaseModel):
@@ -146,6 +137,7 @@ class KBUpdate(BaseModel):
     reranking: bool | None = None
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+    config: dict | None = None
 
 
 class KBFileAdd(BaseModel):
@@ -188,7 +180,7 @@ async def _build_messages_with_rag(history_msgs, user_message, session_kb_ids, c
     # Build conversation text for context-aware retrieval
     conv_history = []
     for m in history_msgs:
-        conv_history.append({"role": m.role, "content": m.content})
+        conv_history.append({"role": m["role"], "content": m["content"]})
 
     context_parts_by_kb = {}  # kb_id -> list of context strings
 
@@ -267,7 +259,7 @@ async def _build_messages_with_rag(history_msgs, user_message, session_kb_ids, c
         messages = [{"role": "system", "content": full_context}]
         if notes_content:
             messages.append({"role": "system", "content": f"Notes for this turn:\n{notes_content}"})
-        messages.extend({"role": m.role, "content": m.content} for m in history_msgs)
+        messages.extend({"role": m["role"], "content": m["content"]} for m in history_msgs)
         messages.append({"role": "user", "content": user_message})
     else:
         # Standard structure: RAG context + notes combined
@@ -275,7 +267,7 @@ async def _build_messages_with_rag(history_msgs, user_message, session_kb_ids, c
         if notes_content:
             combined += "\n\n" + notes_content
         messages = [{"role": "system", "content": combined}]
-        messages.extend({"role": m.role, "content": m.content} for m in history_msgs)
+        messages.extend({"role": m["role"], "content": m["content"]} for m in history_msgs)
         messages.append({"role": "user", "content": user_message})
 
     return messages, full_context
@@ -301,6 +293,11 @@ async def chat(req: ChatRequest):
     session_kb_ids = get_session_kbs()
     current_kb_ids = list(req.knowledge_base_ids)
 
+    # If the session is scoped to a KB, always include that KB
+    session = get_chat_session()
+    if session.knowledge_base_id and session.knowledge_base_id not in current_kb_ids:
+        current_kb_ids.append(session.knowledge_base_id)
+
     if current_kb_ids:
         update_session_kb(current_kb_ids)
         session_kb_ids = get_session_kbs()
@@ -322,15 +319,17 @@ async def chat(req: ChatRequest):
     if not messages:
         messages = history_messages + [{"role": "user", "content": user_message}]
 
-    add_to_history("user", user_message, knowledge_base_ids=current_kb_ids, notes=list(req.notes), parent_id=req.parent_id)
+    if not req.no_history:
+        add_to_history("user", user_message, knowledge_base_ids=current_kb_ids, notes=list(req.notes), parent_id=req.parent_id)
 
     async def generate():
         full_response = ""
         async for chunk in stream_chat(messages, model, provider_id, reasoning_config=reasoning_cfg.model_dump()):
             full_response += chunk
             yield chunk
-        extracted_reasoning, display = extract_reasoning(full_response, reasoning_cfg)
-        add_to_history("assistant", display, reasoning=extracted_reasoning)
+        if not req.no_history:
+            extracted_reasoning, display = extract_reasoning(full_response, reasoning_cfg)
+            add_to_history("assistant", display, reasoning=extracted_reasoning)
 
     return StreamingResponse(generate(), media_type="text/plain")
 
@@ -340,9 +339,11 @@ async def get_chat_history():
     """Get chat history and session KBs."""
     messages = get_history()
     session_kbs = get_session_kbs()
+    session = get_chat_session()
     return {
         "messages": [{"id": m.id, "role": m.role, "content": m.content, "timestamp": m.timestamp, "reasoning": m.reasoning} for m in messages],
         "knowledge_base_ids": session_kbs,
+        "knowledge_base_id": session.knowledge_base_id,
     }
 
 
@@ -433,9 +434,14 @@ async def api_get_message(msg_id: str):
 
 
 @app.get("/api/sessions")
-async def api_list_sessions():
-    """List all chat sessions."""
-    return {"sessions": list_sessions()}
+async def api_list_sessions(knowledge_base_id: str | None = None):
+    """List all chat sessions, optionally filtered by knowledge_base_id.
+    If knowledge_base_id is '__none__', only return sessions without a KB scope."""
+    if knowledge_base_id == "__none__":
+        sessions = list_sessions(knowledge_base_id=None)
+        sessions = [s for s in sessions if s.get("knowledge_base_id") is None]
+        return {"sessions": sessions}
+    return {"sessions": list_sessions(knowledge_base_id=knowledge_base_id)}
 
 
 @app.post("/api/sessions/switch")
@@ -447,7 +453,27 @@ async def api_switch_session(req: Request):
         return JSONResponse({"error": "Session not found"}, status_code=404)
     return {
         "session_id": session.id,
-        "messages": [{"id": m.id, "role": m.role, "content": m.content, "timestamp": m.timestamp, "reasoning": m.reasoning} for m in session.messages]
+        "messages": [{"id": m.id, "role": m.role, "content": m.content, "timestamp": m.timestamp, "reasoning": m.reasoning} for m in session.messages],
+        "knowledge_base_ids": session.knowledge_base_ids,
+        "knowledge_base_id": session.knowledge_base_id,
+    }
+
+
+@app.post("/api/sessions/create")
+async def api_create_session(req: Request):
+    """Create a new session, optionally scoped to a knowledge base."""
+    body = await req.json()
+    knowledge_base_id = body.get("knowledge_base_id")
+    if knowledge_base_id:
+        session = create_kb_session(knowledge_base_id)
+    else:
+        from history import _history
+        session = _history._create_session()
+    return {
+        "session_id": session.id,
+        "messages": [{"id": m.id, "role": m.role, "content": m.content, "timestamp": m.timestamp, "reasoning": m.reasoning} for m in session.messages],
+        "knowledge_base_ids": session.knowledge_base_ids,
+        "knowledge_base_id": session.knowledge_base_id,
     }
 
 
@@ -553,6 +579,99 @@ async def api_search(q: str = "", type: str = "all", limit: int = 20):
     return {"results": results}
 
 
+@app.get("/api/search/all")
+async def api_search_all(q: str = "", limit: int = 20):
+    """Unified search across all data: chats, notes, and knowledge bases."""
+    if not q:
+        return {"chats": [], "notes": [], "knowledge": [], "total": 0}
+
+    query_lower = q.lower()
+
+    chat_results = search_history(q, search_type="all", limit=limit)
+
+    note_results = []
+    for note in search_notes(q):
+        snippet = ""
+        if query_lower in note.content.lower():
+            idx = note.content.lower().find(query_lower)
+            start = max(0, idx - 50)
+            end = min(len(note.content), idx + len(q) + 100)
+            snippet = note.content[start:end]
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(note.content):
+                snippet = snippet + "..."
+        elif query_lower in note.title.lower():
+            snippet = note.title[:150]
+
+        note_results.append({
+            "id": note.id,
+            "title": note.title,
+            "snippet": snippet,
+            "note_type": note.note_type,
+            "tags": note.tags,
+            "updated_at": note.updated_at,
+            "pinned": note.pinned,
+        })
+    note_results = note_results[:limit]
+
+    kb_results = []
+    for kb in list_knowledge_bases():
+        kb_match = False
+        snippet = ""
+        relevance = 0.0
+
+        if query_lower in kb.name.lower():
+            kb_match = True
+            relevance = 0.9
+            snippet = kb.name
+        elif kb.description and query_lower in kb.description.lower():
+            kb_match = True
+            relevance = 0.8
+            snippet = kb.description[:200]
+        else:
+            for f in kb.files:
+                if query_lower in f.name.lower():
+                    kb_match = True
+                    relevance = max(relevance, 0.7)
+                    snippet = f"File: {f.name}"
+                    break
+                if f.content and query_lower in f.content.lower():
+                    kb_match = True
+                    relevance = max(relevance, 0.6)
+                    idx = f.content.lower().find(query_lower)
+                    start = max(0, idx - 50)
+                    end = min(len(f.content), idx + len(q) + 100)
+                    snippet = f.content[start:end]
+                    if start > 0:
+                        snippet = "..." + snippet
+                    if end < len(f.content):
+                        snippet = snippet + "..."
+                    break
+
+        if kb_match:
+            kb_results.append({
+                "id": kb.id,
+                "name": kb.name,
+                "description": kb.description[:150],
+                "kb_type": kb.kb_type,
+                "snippet": snippet,
+                "file_count": len(kb.files),
+                "updated_at": kb.updated_at,
+                "relevance": relevance,
+            })
+    kb_results.sort(key=lambda x: -x["relevance"])
+    kb_results = kb_results[:limit]
+
+    total = len(chat_results) + len(note_results) + len(kb_results)
+    return {
+        "chats": chat_results,
+        "notes": note_results,
+        "knowledge": kb_results,
+        "total": total,
+    }
+
+
 @app.get("/api/config")
 async def get_settings():
     """Get current configuration."""
@@ -629,6 +748,18 @@ async def update_settings(cfg_update: ConfigUpdate):
         update_data["rag_reranking"] = cfg_update.rag_reranking
     if cfg_update.rag_top_k is not None:
         update_data["rag_top_k"] = cfg_update.rag_top_k
+    if cfg_update.web_search_enabled is not None:
+        update_data["web_search_enabled"] = cfg_update.web_search_enabled
+    if cfg_update.web_search_provider is not None:
+        update_data["web_search_provider"] = cfg_update.web_search_provider
+    if cfg_update.web_search_api_key is not None:
+        update_data["web_search_api_key"] = cfg_update.web_search_api_key
+    if cfg_update.web_search_result_count is not None:
+        update_data["web_search_result_count"] = cfg_update.web_search_result_count
+    if cfg_update.web_search_serpapi_base_url is not None:
+        update_data["web_search_serpapi_base_url"] = cfg_update.web_search_serpapi_base_url
+    if cfg_update.web_search_searxng_base_url is not None:
+        update_data["web_search_searxng_base_url"] = cfg_update.web_search_searxng_base_url
 
     cfg = update_config(**update_data)
     return await get_settings()
@@ -642,16 +773,17 @@ async def list_kb():
     return {
         "knowledge_bases": [
             {
-                "id": kb.id, 
-                "name": kb.name, 
-                "description": kb.description, 
-                "kb_type": kb.kb_type, 
+                "id": kb.id,
+                "name": kb.name,
+                "description": kb.description,
+                "kb_type": kb.kb_type,
                 "retrieval_mode": kb.retrieval_mode,
                 "embedding_model": kb.embedding_model,
                 "embedding_dimensions": kb.embedding_dimensions,
                 "storage_path": kb.storage_path,
-                "file_count": len(kb.files), 
-                "created_at": kb.created_at, 
+                "file_count": len(kb.files),
+                "config": kb.config,
+                "created_at": kb.created_at,
                 "updated_at": kb.updated_at
             } for kb in kbs
         ]
@@ -663,7 +795,7 @@ async def create_kb(req: KBCreate):
     """Create a new knowledge base."""
     # Generate ID first so we can set storage path before initial save
     kb_id = str(uuid.uuid4())
-    storage_path = str(Path.home() / ".chatter" / "knowledge" / f"{kb_id}")
+    storage_path = str(Path.home() / ".cio-intelligence-hub" / "knowledge" / f"{kb_id}")
     
     # Create with the pre-generated ID
     kb = create_knowledge_base(req.name, req.description, req.kb_type, kb_id=kb_id)
@@ -745,19 +877,22 @@ async def update_kb(kb_id: str, req: KBUpdate):
         kb.chunk_size = req.chunk_size
     if req.chunk_overlap is not None:
         kb.chunk_overlap = req.chunk_overlap
+    if req.config is not None:
+        kb.config = {**(kb.config or {}), **req.config}
     kb = update_knowledge_base(kb)
     return {
-        "id": kb.id, 
-        "name": kb.name, 
-        "description": kb.description, 
+        "id": kb.id,
+        "name": kb.name,
+        "description": kb.description,
         "kb_type": kb.kb_type,
         "retrieval_mode": kb.retrieval_mode,
         "hybrid_search": kb.hybrid_search,
         "reranking": kb.reranking,
         "chunk_size": kb.chunk_size,
         "chunk_overlap": kb.chunk_overlap,
-        "file_count": len(kb.files), 
-        "created_at": kb.created_at, 
+        "config": kb.config,
+        "file_count": len(kb.files),
+        "created_at": kb.created_at,
         "updated_at": kb.updated_at
     }
 
@@ -782,7 +917,7 @@ async def add_kb_file(kb_id: str, req: KBFileAdd):
 async def scrape_url(kb_id: str, req: KBScrapeUrl):
     """Scrape content from a URL and add it to the KB."""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; Chatter/1.0)"}
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; CIO-Intelligence-Hub/1.0)"}
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(req.url, headers=headers)
             response.raise_for_status()
@@ -810,7 +945,7 @@ async def remove_kb_file(kb_id: str, file_id: str):
 
 
 @app.post("/api/knowledge/{kb_id}/upload")
-async def upload_file(kb_id: str, file: UploadFile = File(...)):
+async def upload_file(kb_id: str, file: UploadFile = File(...), source_id: str = Form(None)):
     """Upload a file, process its content, and add it to the KB."""
     content = await file.read()
     text_content = process_upload(content, file.filename)
@@ -818,11 +953,16 @@ async def upload_file(kb_id: str, file: UploadFile = File(...)):
     # Estimate token count (simple word-based estimation for now)
     token_count = len(text_content.split())
     
+    metadata = {}
+    if source_id:
+        metadata["source_id"] = source_id
+
     kb_file = add_file_to_knowledge_base(
         kb_id, 
         file.filename, 
         text_content, 
-        file.content_type or "application/octet-stream"
+        file.content_type or "application/octet-stream",
+        metadata=metadata
     )
     
     if not kb_file:
@@ -859,7 +999,7 @@ async def get_kb_file(kb_id: str, file_id: str):
 
 
 @app.post("/api/knowledge/{kb_id}/embed")
-async def embed_kb(kb_id: str):
+async def embed_kb(kb_id: str, file_id: str = None, source_id: str = None):
     """Process all files in a KB and store their embeddings (streaming progress)."""
     kb = get_knowledge_base(kb_id)
     if not kb:
@@ -868,14 +1008,20 @@ async def embed_kb(kb_id: str):
     embedding_model = kb.config.get("embeddingModel", "nomic-embed-text")
     embedding_provider = kb.config.get("embeddingProvider")
     
-    total_files = len(kb.files)
+    files_to_process = kb.files
+    if file_id:
+        files_to_process = [f for f in files_to_process if f.id == file_id]
+    elif source_id:
+        files_to_process = [f for f in files_to_process if f.metadata.get('source_id') == source_id]
+
+    total_files = len(files_to_process)
     
     async def generate():
         total_chunks = 0
         total_token_count = 0
         dimensions = 0
         
-        for idx, file in enumerate(kb.files):
+        for idx, file in enumerate(files_to_process):
             if not file.content:
                 continue
             
@@ -884,7 +1030,7 @@ async def embed_kb(kb_id: str):
             chunks_count = await add_to_vectorstore(
                 kb_id, 
                 file.content, 
-                metadata={"file_id": file.id, "file_name": file.name},
+                metadata={"file_id": file.id, "file_name": file.name, **({'source_id': source_id} if source_id else {})},
                 chunk_size=kb.chunk_size,
                 chunk_overlap=kb.chunk_overlap,
                 provider_id=embedding_provider,
@@ -920,6 +1066,181 @@ async def list_kb_embeddings(kb_id: str):
     """List all stored embeddings/chunks for a KB."""
     items = get_kb_embeddings(kb_id)
     return {"embeddings": items}
+
+
+@app.post("/api/knowledge/{kb_id}/sources/{source_id}/sync")
+async def sync_source(kb_id: str, source_id: str):
+    """Fetch data from a single source, store as files, and embed."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    
+    sources = kb.config.get("sources", [])
+    source = next((s for s in sources if s.get("id") == source_id), None)
+    if not source:
+        return JSONResponse({"error": "Source not found"}, status_code=404)
+    
+    # Update source status to syncing
+    for s in sources:
+        if s.get("id") == source_id:
+            s["status"] = "syncing"
+            s["last_synced"] = None
+    kb.config["sources"] = sources
+    update_knowledge_base(kb)
+    
+    try:
+        # Fetch content from source
+        fetched = await fetch_source(source)
+        
+        if not fetched:
+            for s in sources:
+                if s.get("id") == source_id:
+                    s["status"] = "active"
+                    s["last_synced"] = time.time()
+            kb.config["sources"] = sources
+            update_knowledge_base(kb)
+            return {"status": "ok", "files_added": 0, "chunks_created": 0}
+        
+        # Remove ALL old files and embeddings for this source to avoid duplicates
+        old_file_ids = [f.id for f in kb.files if f.metadata.get("source_id") == source_id]
+        if old_file_ids:
+            kb.files = [f for f in kb.files if f.metadata.get("source_id") != source_id]
+            update_knowledge_base(kb)
+        delete_source_chunks(kb_id, source_id)
+        
+        # Add fetched content as files to the KB
+        files_added = 0
+        total_chunks = 0
+        embedding_model = kb.config.get("embeddingModel", "nomic-embed-text")
+        embedding_provider = kb.config.get("embeddingProvider")
+        
+        for item in fetched:
+            name = item.get("name", "untitled")
+            content = item.get("content", "")
+            if not content.strip():
+                continue
+            
+            file_type = item.get("file_type", "text")
+            content_url = item.get("content_url", "")
+            metadata = item.get("metadata", {})
+            
+            # Add the file
+            kb_file = add_file_to_knowledge_base(
+                kb_id, name, content, file_type, content_url,
+                metadata={**metadata, "source_id": source_id}
+            )
+            files_added += 1
+            
+            # Embed if KB is in focused retrieval mode
+            if kb.retrieval_mode == "focused" and content.strip():
+                try:
+                    chunks = await add_to_vectorstore(
+                        kb_id, content,
+                        metadata={"file_id": kb_file.id, "file_name": name, "source_id": source_id},
+                        chunk_size=kb.chunk_size,
+                        chunk_overlap=kb.chunk_overlap,
+                        provider_id=embedding_provider,
+                        embedding_model=embedding_model
+                    )
+                    total_chunks += chunks
+                    # Update file embedding status
+                    update_file_in_knowledge_base(kb_id, kb_file.id, {
+                        "is_embedded": True,
+                        "chunks_count": chunks,
+                    })
+                except Exception as e:
+                    print(f"Embedding error for {name}: {e}")
+        
+        # Update source status
+        kb = get_knowledge_base(kb_id)
+        sources = kb.config.get("sources", [])
+        for s in sources:
+            if s.get("id") == source_id:
+                s["status"] = "active"
+                s["last_synced"] = time.time()
+                s["files_count"] = files_added
+                s["chunks_count"] = total_chunks
+        kb.config["sources"] = sources
+        
+        # Update embedding model info
+        if total_chunks > 0 and not kb.embedding_model:
+            kb.embedding_model = embedding_model
+        update_knowledge_base(kb)
+        
+        return {"status": "ok", "files_added": files_added, "chunks_created": total_chunks}
+    
+    except Exception as e:
+        # Update source status to error
+        kb = get_knowledge_base(kb_id)
+        sources = kb.config.get("sources", [])
+        for s in sources:
+            if s.get("id") == source_id:
+                s["status"] = "error"
+                s["error"] = str(e)[:200]
+        kb.config["sources"] = sources
+        update_knowledge_base(kb)
+        return JSONResponse({"error": f"Sync failed: {str(e)}"}, status_code=500)
+
+
+@app.delete("/api/knowledge/{kb_id}/sources/{source_id}")
+async def delete_source(kb_id: str, source_id: str):
+    """Delete a source and all its associated files and embeddings."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+
+    sources = kb.config.get("sources", [])
+    source = next((s for s in sources if s.get("id") == source_id), None)
+    if not source:
+        return JSONResponse({"error": "Source not found"}, status_code=404)
+
+    removed_file_ids = remove_files_by_source(kb_id, source_id)
+    delete_source_chunks(kb_id, source_id)
+
+    kb = get_knowledge_base(kb_id)
+    kb.config["sources"] = [s for s in sources if s.get("id") != source_id]
+    update_knowledge_base(kb)
+
+    return {"status": "ok", "files_removed": len(removed_file_ids)}
+
+
+@app.post("/api/knowledge/{kb_id}/sync")
+async def sync_all_sources(kb_id: str):
+    """Fetch data from all sources in a KB, store as files, and embed."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    
+    sources = kb.config.get("sources", [])
+    if not sources:
+        return {"status": "ok", "sources_synced": 0, "total_files": 0, "total_chunks": 0}
+    
+    total_files = 0
+    total_chunks = 0
+    sources_synced = 0
+    errors = []
+    
+    for source in sources:
+        source_id = source.get("id", "")
+        try:
+            result = await sync_source(kb_id, source_id)
+            if isinstance(result, dict) and not result.get("error"):
+                total_files += result.get("files_added", 0)
+                total_chunks += result.get("chunks_created", 0)
+                sources_synced += 1
+            else:
+                errors.append({"source_id": source_id, "error": result.get("error", "Unknown error") if isinstance(result, dict) else "Failed"})
+        except Exception as e:
+            errors.append({"source_id": source_id, "error": str(e)[:200]})
+    
+    return {
+        "status": "ok",
+        "sources_synced": sources_synced,
+        "total_sources": len(sources),
+        "total_files": total_files,
+        "total_chunks": total_chunks,
+        "errors": errors,
+    }
 
 
 
@@ -1331,12 +1652,46 @@ class AgentChatRequest(BaseModel):
     model: str | None = None
     provider_id: str | None = None
     enable_notes_tools: bool = True
+    enable_web_search: bool = True
 
 
 SYSTEM_PROMPT_TOOLS = """You are a helpful assistant with access to tools for managing the user's notes.
 When the user asks about notes, wants to create, update, search, or view notes, use the appropriate tool.
 Always confirm actions to the user after using a tool.
 If a tool fails, explain the error and suggest alternatives."""
+
+SYSTEM_PROMPT_WEB_SEARCH = """You have access to web search and URL fetching tools for researching information.
+
+**Web Search (search_web):**
+- Use when you need current information, facts, or content beyond your training data
+- Returns search results with snippets - analyze them to determine if follow-up is needed
+- If snippets answer the question, respond directly without further tool calls
+- If more detail is needed, use fetch_url to read specific pages
+
+**URL Fetching (fetch_url):**
+- Use when search snippets are insufficient and you need full page content
+- Returns up to 50,000 characters of page text directly to your context
+- Extract specific information, verify facts, or follow links mentioned on pages
+- When you find a useful URL on a fetched page, you can fetch it too (link following)
+
+**Interleaved Thinking Research Loop:**
+1. THINK: Analyze what information you still need
+2. SEARCH: Use search_web to find relevant sources
+3. EVALUATE: Check if snippets contain the answer
+4. FETCH: If needed, use fetch_url for full page content
+5. REPEAT: Continue until you have comprehensive information
+6. SYNTHESIZE: Present a well-rounded answer from multiple sources
+
+**Source Citation (MANDATORY):**
+- ALWAYS cite your sources using markdown links: [Source Title](URL)
+- When using search results, cite each fact to its corresponding source
+- When fetching a URL, cite the page title and URL for any information derived from it
+- Format: Use [^1], [^2], etc. for inline citations and list sources at the end
+- Example: "The capital of France is Paris[^1]\n\n[^1]: [Wikipedia - France](https://en.wikipedia.org/wiki/France)"
+- NEVER present information without citing its source
+- If multiple sources confirm the same fact, cite all confirming sources
+
+Be thorough but efficient - don't fetch pages unnecessarily if snippets suffice."""
 
 
 async def _stream_with_tools(
@@ -1346,10 +1701,11 @@ async def _stream_with_tools(
     tools: list[dict],
     max_iterations: int = 5,
     reasoning_config: dict | None = None,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str | dict, None]:
     """Agent loop: stream chat with native tool calling support.
 
-    Yields text chunks. Executes tool calls and feeds results back to the LLM.
+    Yields text chunks and dicts. Tracks all web sources used.
+    Final dict yields include: {"type": "sources", "sources": [...]}
     """
     cfg = get_config()
     provider = None
@@ -1367,15 +1723,15 @@ async def _stream_with_tools(
 
     iteration = 0
     current_messages = list(messages)
+    collected_sources = []
+    tool_chain = []
 
     while iteration < max_iterations:
         iteration += 1
 
-        # --- Call LLM with tools ---
         if provider.type == "openai":
             async for chunk in _agent_loop_openai(provider, model, current_messages, tools, reasoning_config):
                 if isinstance(chunk, dict) and chunk.get("type") == "tool_calls":
-                    # Execute tools and append results
                     tool_results = []
                     for tc in chunk["tool_calls"]:
                         if tc["name"] == "execute_code":
@@ -1387,6 +1743,16 @@ async def _stream_with_tools(
                                 "name": tc["name"],
                                 "content": json.dumps(result),
                             })
+                        elif tc["name"] in ("search_web", "fetch_url"):
+                            result = execute_web_tool(tc["name"], tc["arguments"])
+                            content = result.get("formatted_response") or json.dumps(result)
+                            tool_results.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "name": tc["name"],
+                                "content": content,
+                            })
+                            _collect_sources(collected_sources, tool_chain, tc, result)
                         else:
                             result = execute_note_tool(tc["name"], tc["arguments"])
                             tool_results.append({
@@ -1396,17 +1762,17 @@ async def _stream_with_tools(
                                 "content": json.dumps(result),
                             })
                     current_messages.extend(tool_results)
-                    # Also yield a status update
-                    yield f"\n[Executed {len(tool_results)} tool(s)]\n"
-                    break  # Go to next iteration
+                    tool_names = [tc["name"] for tc in chunk["tool_calls"]]
+                    yield f"\n[Research: {', '.join(tool_names)} executed]\n"
+                    break
                 elif isinstance(chunk, dict) and chunk.get("type") == "final":
-                    # Final response
                     yield chunk["content"]
+                    yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                     return
                 else:
                     yield chunk
             else:
-                # If the loop completed without break (no tool calls), we're done
+                yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                 return
 
         elif provider.type == "anthropic":
@@ -1427,6 +1793,20 @@ async def _stream_with_tools(
                                     }
                                 ],
                             })
+                        elif tc["name"] in ("search_web", "fetch_url"):
+                            result = execute_web_tool(tc["name"], tc["arguments"])
+                            content = result.get("formatted_response") or json.dumps(result)
+                            tool_results.append({
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": tc["id"],
+                                        "content": content,
+                                    }
+                                ],
+                            })
+                            _collect_sources(collected_sources, tool_chain, tc, result)
                         else:
                             result = execute_note_tool(tc["name"], tc["arguments"])
                             tool_results.append({
@@ -1440,18 +1820,20 @@ async def _stream_with_tools(
                                 ],
                             })
                     current_messages.extend(tool_results)
-                    yield f"\n[Executed {len(tool_results)} tool(s)]\n"
+                    tool_names = [tc["name"] for tc in chunk["tool_calls"]]
+                    yield f"\n[Research: {', '.join(tool_names)} executed]\n"
                     break
                 elif isinstance(chunk, dict) and chunk.get("type") == "final":
                     yield chunk["content"]
+                    yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                     return
                 else:
                     yield chunk
             else:
+                yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                 return
 
         elif provider.type == "ollama":
-            # Ollama tool support via /api/chat with tools parameter
             async for chunk in _agent_loop_ollama(provider, model, current_messages, tools):
                 if isinstance(chunk, dict) and chunk.get("type") == "tool_calls":
                     tool_results = []
@@ -1463,6 +1845,14 @@ async def _stream_with_tools(
                                 "role": "tool",
                                 "content": json.dumps(result),
                             })
+                        elif tc["name"] in ("search_web", "fetch_url"):
+                            result = execute_web_tool(tc["name"], tc["arguments"])
+                            content = result.get("formatted_response") or json.dumps(result)
+                            tool_results.append({
+                                "role": "tool",
+                                "content": content,
+                            })
+                            _collect_sources(collected_sources, tool_chain, tc, result)
                         else:
                             result = execute_note_tool(tc["name"], tc["arguments"])
                             tool_results.append({
@@ -1470,20 +1860,43 @@ async def _stream_with_tools(
                                 "content": json.dumps(result),
                             })
                     current_messages.extend(tool_results)
-                    yield f"\n[Executed {len(tool_results)} tool(s)]\n"
+                    tool_names = [tc["name"] for tc in chunk["tool_calls"]]
+                    yield f"\n[Research: {', '.join(tool_names)} executed]\n"
                     break
                 elif isinstance(chunk, dict) and chunk.get("type") == "final":
                     yield chunk["content"]
+                    yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                     return
                 else:
                     yield chunk
             else:
+                yield {"type": "sources", "sources": collected_sources, "chain": tool_chain}
                 return
         else:
-            # Fallback: no tools, just stream
             async for chunk in stream_chat(current_messages, model, provider_id, reasoning_config):
                 yield chunk
             return
+
+
+def _collect_sources(collected: list, chain: list, tc: dict, result: dict):
+    """Collect sources and tool chain info from web tool results."""
+    chain.append({
+        "iteration": len(chain) + 1,
+        "tool": tc["name"],
+        "args": tc.get("arguments", {}),
+    })
+
+    if tc["name"] == "search_web" and result.get("results"):
+        for r in result["results"]:
+            source = {"title": r["title"], "url": r["url"], "snippet": r.get("snippet", "")[:300]}
+            if not any(s["url"] == source["url"] for s in collected):
+                collected.append(source)
+
+    elif tc["name"] == "fetch_url":
+        url = tc.get("arguments", {}).get("url", "")
+        title = result.get("title", url)
+        if not any(s["url"] == url for s in collected):
+            collected.append({"title": title, "url": url, "snippet": result.get("content", "")[:300]})
 
 
 async def _agent_loop_openai(
@@ -1764,9 +2177,10 @@ EXECUTE_CODE_TOOL = {
 
 @app.post("/api/chat/agent")
 async def agent_chat(req: AgentChatRequest):
-    """Chat with agentic tool calling for notes management.
+    """Chat with agentic tool calling for notes, code, and web search.
 
-    The LLM can autonomously call note tools (search, view, write, replace).
+    The LLM can autonomously call tools for notes management, code execution,
+    and web search (when enabled).
     """
     cfg = get_config()
     model = req.model or cfg.active_model
@@ -1777,8 +2191,10 @@ async def agent_chat(req: AgentChatRequest):
     if req.enable_notes_tools:
         all_tools.extend(NOTE_TOOLS)
     all_tools.append(EXECUTE_CODE_TOOL)
+    if req.enable_web_search and cfg.web_search_enabled:
+        all_tools.extend(WEB_SEARCH_TOOLS)
 
-    # Build messages with code execution system prompt
+    # Build system prompt
     sys_prompt = SYSTEM_PROMPT_TOOLS + """
 
 You also have access to a code execution tool. When the user asks you to write or run code, use the execute_code tool.
@@ -1786,11 +2202,16 @@ You also have access to a code execution tool. When the user asks you to write o
 - Matplotlib figures are automatically captured as images.
 - Always use print() to display results you want the user to see.
 - Use execute_code for: data analysis, charts, calculations, file processing, and any computational task."""
+
+    if req.enable_web_search and cfg.web_search_enabled:
+        sys_prompt += "\n\n" + SYSTEM_PROMPT_WEB_SEARCH
+
     messages = [{"role": "system", "content": sys_prompt}]
     messages.append({"role": "user", "content": req.message})
 
     async def generate():
         full_response = ""
+        sources = []
         reasoning_cfg = ReasoningConfig(
             enabled=cfg.reasoning_enabled,
             mode=cfg.reasoning_mode,
@@ -1804,11 +2225,22 @@ You also have access to a code execution tool. When the user asks you to write o
             tools=all_tools,
             reasoning_config=reasoning_cfg.model_dump(),
         ):
-            full_response += chunk
-            yield chunk
+            if isinstance(chunk, dict) and chunk.get("type") == "sources":
+                sources = chunk.get("sources", [])
+            else:
+                full_response += chunk
+                yield chunk
+
+        if sources:
+            source_block = "\n\n---\n## Sources\n\n"
+            for i, s in enumerate(sources, 1):
+                source_block += f"{i}. **[{s['title']}]({s['url']})**\n"
+            full_response += source_block
+            yield source_block
+
         extracted_reasoning, display = extract_reasoning(full_response, reasoning_cfg)
         add_to_history("user", req.message)
-        add_to_history("assistant", display, reasoning=extracted_reasoning)
+        add_to_history("assistant", display, reasoning=extracted_reasoning, sources=sources)
 
     return StreamingResponse(generate(), media_type="text/plain")
 
@@ -1833,6 +2265,29 @@ async def api_followups_regenerate(req: FollowUpRequest):
     """Regenerate follow-up suggestions for a message."""
     suggestions = await generate_followups(req.message, req.context, req.count)
     return {"suggestions": suggestions}
+
+
+class WebSearchRequest(BaseModel):
+    query: str
+    count: int = 10
+
+
+class FetchUrlRequest(BaseModel):
+    url: str
+
+
+@app.post("/api/web/search")
+async def api_web_search(req: WebSearchRequest):
+    """Test web search directly."""
+    result = search_web(req.query, req.count)
+    return result
+
+
+@app.post("/api/web/fetch")
+async def api_web_fetch(req: FetchUrlRequest):
+    """Test URL fetching directly."""
+    result = fetch_url(req.url)
+    return result
 
 
 class ArtifactDetectRequest(BaseModel):

@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Box, Button, TextField, Switch, FormControlLabel, FormControl, Select, 
-  MenuItem, InputLabel, Typography, Paper, Divider, Card, CardContent, 
-  Chip, IconButton, List, ListItem, ListItemIcon, ListItemText, 
+import {
+  Box, Button, TextField, Switch, FormControlLabel, FormControl, Select,
+  MenuItem, InputLabel, Typography, Paper, Divider, Card, CardContent,
+  Chip, IconButton, List, ListItem, ListItemIcon, ListItemText,
   Tooltip, InputAdornment, Fade, Zoom, CircularProgress, Alert, Snackbar
 } from '@mui/material';
-import { 
-  Devices, Palette, Psychology, Storage, Add, Edit, Delete, ArrowBack, 
-  Check, Close, Cloud, Terminal, Key, Settings, AutoAwesome, Search, 
+import {
+  Devices, Palette, Psychology, Storage, Add, Edit, Delete, ArrowBack,
+  Check, Close, Cloud, Terminal, Key, Settings, AutoAwesome, Search,
   Code, Extension, Visibility, VisibilityOff, Refresh, Star, StarBorder,
-  SmartToy, Language, Hub, Tune, Science, Info
+  SmartToy, Language, Hub, Tune, Science, Info, Public
 } from '@mui/icons-material';
 
 const PROVIDER_TYPES = [
@@ -33,6 +33,8 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels }) => {
     reasoning_enabled: true, reasoning_mode: 'default', reasoning_custom_start: '', reasoning_custom_end: '',
     ollama_think: false, reasoning_effort: '', rag_system_context: false, rag_chunk_size: 1000,
     rag_chunk_overlap: 100, rag_min_chunk_size: 0, rag_hybrid_search: true, rag_reranking: true, rag_top_k: 10,
+    web_search_enabled: true, web_search_provider: 'duckduckgo', web_search_api_key: '',
+    web_search_result_count: 10,
   });
 
   const tabs = [
@@ -40,6 +42,7 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels }) => {
     { id: 'interface', label: 'Interface', icon: Palette, description: 'Customize your chat experience' },
     { id: 'reasoning', label: 'Reasoning', icon: Psychology, description: 'Configure thinking models' },
     { id: 'retrieval', label: 'Retrieval', icon: Storage, description: 'RAG and knowledge settings' },
+    { id: 'websearch', label: 'Web Search', icon: Public, description: 'Agentic web search configuration' },
   ];
 
   useEffect(() => {
@@ -64,6 +67,10 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels }) => {
         rag_hybrid_search: config.rag_hybrid_search ?? true,
         rag_reranking: config.rag_reranking ?? true,
         rag_top_k: config.rag_top_k ?? 10,
+        web_search_enabled: config.web_search_enabled ?? true,
+        web_search_provider: config.web_search_provider ?? 'duckduckgo',
+        web_search_api_key: config.web_search_api_key ?? '',
+        web_search_result_count: config.web_search_result_count ?? 10,
       });
     }
   }, [config]);
@@ -659,6 +666,100 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels }) => {
                           </FormControl>
                         ))}
                       </Box>
+                    </SettingSection>
+                  </>
+                )}
+
+                {activeTab === 'websearch' && (
+                  <>
+                    <SettingSection title="Agentic Web Search" description="Configure web search for agentic research with interleaved thinking" icon={Public}>
+                      <SettingRow label="Enable Web Search" description="Allow agents to search the web for real-time information">
+                        <Switch
+                          checked={localPrefs.web_search_enabled}
+                          onChange={(e) => {
+                            setLocalPrefs(prev => ({ ...prev, web_search_enabled: e.target.checked }));
+                            onSave({ web_search_enabled: e.target.checked });
+                          }}
+                        />
+                      </SettingRow>
+                    </SettingSection>
+
+                    <SettingSection title="Search Provider" description="Choose your search backend" icon={Search}>
+                      <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+                        <InputLabel>Provider</InputLabel>
+                        <Select
+                          value={localPrefs.web_search_provider}
+                          onChange={(e) => {
+                            setLocalPrefs(prev => ({ ...prev, web_search_provider: e.target.value }));
+                            onSave({ web_search_provider: e.target.value });
+                          }}
+                          label="Provider"
+                          sx={{ borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', border: '1px solid var(--border)' }}
+                        >
+                          <MenuItem value="duckduckgo">DuckDuckGo (Default - No API Key)</MenuItem>
+                          <MenuItem value="serpapi">SerpAPI (Google Results)</MenuItem>
+                          <MenuItem value="searxng">SearXNG (Self-hosted)</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {localPrefs.web_search_provider === 'serpapi' && (
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="SerpAPI API Key"
+                          type={showApiKey ? 'text' : 'password'}
+                          value={localPrefs.web_search_api_key}
+                          onChange={(e) => {
+                            setLocalPrefs(prev => ({ ...prev, web_search_api_key: e.target.value }));
+                          }}
+                          onBlur={(e) => {
+                            onSave({ web_search_api_key: e.target.value });
+                          }}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <IconButton onClick={() => setShowApiKey(!showApiKey)} edge="end">
+                                  {showApiKey ? <VisibilityOff /> : <Visibility />}
+                                </IconButton>
+                              </InputAdornment>
+                            ),
+                          }}
+                          sx={{ mb: 2 }}
+                        />
+                      )}
+
+                      {localPrefs.web_search_provider === 'searxng' && (
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="SearXNG Base URL"
+                          placeholder="https://your-searxng-instance.com"
+                          value={localPrefs.web_search_searxng_base_url || ''}
+                          onChange={(e) => {
+                            setLocalPrefs(prev => ({ ...prev, web_search_searxng_base_url: e.target.value }));
+                          }}
+                          onBlur={(e) => {
+                            onSave({ web_search_searxng_base_url: e.target.value });
+                          }}
+                          sx={{ mb: 2 }}
+                        />
+                      )}
+
+                      <SettingRow label="Result Count" description="Maximum number of search results per query" divider={false}>
+                        <FormControl size="small" sx={{ minWidth: 100 }}>
+                          <Select
+                            value={localPrefs.web_search_result_count}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value);
+                              setLocalPrefs(prev => ({ ...prev, web_search_result_count: v }));
+                              onSave({ web_search_result_count: v });
+                            }}
+                            sx={{ borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', border: '1px solid var(--border)' }}
+                          >
+                            {[5, 10, 15, 20].map(o => <MenuItem key={o} value={o}>{o}</MenuItem>)}
+                          </Select>
+                        </FormControl>
+                      </SettingRow>
                     </SettingSection>
                   </>
                 )}

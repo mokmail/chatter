@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } f
 import AttachmentPill from './common/AttachmentPill'
 import DropdownPanel from './common/DropdownPanel'
 import TypingDots from './common/TypingDots'
+import AttachNotesModal from './AttachNotesModal'
 
-const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledgeBases = [], sessionKnowledgeBases = [], onShare, hasMessages }, ref) => {
+const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledgeBases = [], sessionKnowledgeBases = [], sessionKnowledgeBaseId = null, onShare, hasMessages }, ref) => {
   const [message, setMessage] = useState('')
   const [attachments, setAttachments] = useState({ files: [], notes: [], knowledgeBases: [], agents: [] })
 
@@ -31,6 +32,13 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
 
   // Initialize KBs from session (persist across page reloads)
   useEffect(() => {
+    if (sessionKnowledgeBaseId && attachments.knowledgeBases.length === 0) {
+      const kbObject = knowledgeBases.find(k => k.id === sessionKnowledgeBaseId)
+      if (kbObject) {
+        setAttachments(prev => ({ ...prev, knowledgeBases: [kbObject] }))
+        return
+      }
+    }
     if (sessionKnowledgeBases.length > 0) {
       const sessionKBObjects = sessionKnowledgeBases
         .map(id => knowledgeBases.find(k => k.id === id))
@@ -39,11 +47,12 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
         setAttachments(prev => ({ ...prev, knowledgeBases: sessionKBObjects }))
       }
     }
-  }, [sessionKnowledgeBases, knowledgeBases])
+  }, [sessionKnowledgeBases, sessionKnowledgeBaseId, knowledgeBases])
 
   const [activeDropdown, setActiveDropdown] = useState(null)
   const [noteText, setNoteText] = useState('')
   const [showNoteInput, setShowNoteInput] = useState(false)
+  const [showAttachNotes, setShowAttachNotes] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [sendAnimating, setSendAnimating] = useState(false)
   const [textareaFocused, setTextareaFocused] = useState(false)
@@ -152,6 +161,7 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
     { id: 'writer', name: 'Writer', description: 'Creative and professional writing' },
     { id: 'analyst', name: 'Analyst', description: 'Data analysis and insights' },
     { id: 'notes-agent', name: 'Notes Agent', description: 'Autonomously manages your notes (search, create, update)' },
+    { id: 'web-search', name: 'Web Search', description: 'Agentic web search with interleaved thinking' },
   ]
 
   const hasContent = message.trim() || allAttachments.length > 0
@@ -284,7 +294,7 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
 
                     <button
                       type="button"
-                      onClick={() => { setActiveDropdown('agent'); setActiveDropdown(null) }}
+                      onClick={() => setActiveDropdown('agent')}
                       className="flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-xl transition-all hover:bg-[var(--surface-hover)] group/dropitem"
                     >
                       <div className="w-10 h-10 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center shrink-0 group-hover/dropitem:scale-110 transition-transform">
@@ -295,6 +305,22 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
                       <div className="text-left">
                         <div className="font-bold text-[var(--text)]">Select Agent</div>
                         <div className="text-[11px] text-[var(--text-tertiary)]">Assign a specific role</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setShowAttachNotes(true); setActiveDropdown(null) }}
+                      className="flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-xl transition-all hover:bg-[var(--surface-hover)] group/dropitem"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center shrink-0 group-hover/dropitem:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[var(--text-secondary)]">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-[var(--text)]">Attach Notes</div>
+                        <div className="text-[11px] text-[var(--text-tertiary)]">Inject full notes as context</div>
                       </div>
                     </button>
                   </div>
@@ -409,11 +435,11 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
               onKeyDown={handleKeyDown}
               onFocus={() => setTextareaFocused(true)}
               onBlur={() => setTextareaFocused(false)}
-              placeholder={disabled ? 'AI is thinking...' : `Message ${currentModel || 'BEV Intelligence'}...`}
+              placeholder={disabled ? 'AI is thinking...' : `Message ${currentModel || 'CIO Intelligence Hub'}...`}
               disabled={disabled}
               rows={1}
               className="w-full rounded-xl px-3 py-3.5 resize-none disabled:opacity-50 transition-all duration-200 text-[15px] leading-relaxed placeholder:text-[var(--text-muted)]"
-              style={{ 
+              style={{
                 backgroundColor: 'transparent',
                 color: 'var(--text)',
                 border: 'none',
@@ -423,6 +449,15 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
                 boxShadow: 'none',
               }}
             />
+            {/* Character counter for long messages */}
+            {message.length > 500 && (
+              <div className="absolute bottom-1 right-2 text-[10px] font-medium tabular-nums"
+                style={{
+                  color: message.length > 4000 ? 'var(--danger)' : 'var(--text-muted)',
+                }}>
+                {message.length.toLocaleString()}
+              </div>
+            )}
           </div>
 
           <div className="relative shrink-0 pb-1 pr-1">
@@ -541,10 +576,33 @@ const ChatInput = forwardRef(({ onSend, onStop, currentModel, disabled, knowledg
               AI is thinking...
             </span>
           ) : (
-            'Press Enter to send · Shift+Enter for new line · Drag & drop files'
+            <span className="flex items-center justify-center gap-3 flex-wrap">
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--surface)] border border-[var(--border)]">Enter</kbd>
+                <span>to send</span>
+              </span>
+              <span className="w-1 h-1 rounded-full bg-[var(--text-muted)] opacity-30" />
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--surface)] border border-[var(--border)]">Shift+Enter</kbd>
+                <span>for new line</span>
+              </span>
+              <span className="w-1 h-1 rounded-full bg-[var(--text-muted)] opacity-30" />
+              <span>Drag & drop files</span>
+            </span>
           )}
         </span>
       </div>
+
+      <AttachNotesModal
+        isOpen={showAttachNotes}
+        onClose={() => setShowAttachNotes(false)}
+        onAttach={(notes) => {
+          setAttachments(prev => ({
+            ...prev,
+            notes: [...prev.notes, ...notes.map(n => n.content)]
+          }))
+        }}
+      />
     </div>
   )
 })

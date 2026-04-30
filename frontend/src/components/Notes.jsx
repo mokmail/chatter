@@ -45,6 +45,9 @@ import {
   FolderIcon,
   ChevronRightIcon,
   FilterIcon,
+  LinkIcon,
+  CopyIcon,
+  GridIcon,
 } from './common/Icons'
 
 const ICON_MAP = {
@@ -167,6 +170,54 @@ const NoteListItem = ({ note, isSelected, onSelect }) => {
   )
 }
 
+const NoteGridItem = ({ note, isSelected, onSelect }) => {
+  return (
+    <button
+      onClick={() => onSelect(note.id)}
+      className={`group w-full text-left p-4 rounded-xl transition-all duration-300 border relative overflow-hidden ${
+        isSelected
+          ? 'glass-card-strong border-[var(--accent-primary)]/40 shadow-lg glow-accent-sm'
+          : 'border-transparent hover:glass-card hover:border-[var(--glass-border)]'
+      }`}
+    >
+      {isSelected && (
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-primary)]/10 to-transparent pointer-events-none" />
+      )}
+      <div className="flex items-start justify-between gap-2 mb-2 relative z-10">
+        <div className="p-2 rounded-lg" style={{ background: `${getTypeInfo(note.note_type).color}20` }}>
+          {getNoteIcon(note.note_type, 16)}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {note.pinned && <PinIcon size={12} className="text-[var(--accent-primary)]" />}
+          {note.note_type && (
+            <span
+              className="text-[7px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider"
+              style={{
+                background: `${getTypeInfo(note.note_type).color}20`,
+                color: getTypeInfo(note.note_type).color,
+              }}
+            >
+              {note.note_type}
+            </span>
+          )}
+        </div>
+      </div>
+      <h3 className={`font-bold text-sm truncate mb-1 relative z-10 ${isSelected ? 'text-[var(--accent-primary)]' : 'text-[var(--text)]'}`}>
+        {note.title || 'Untitled'}
+      </h3>
+      <p className={`text-[10px] line-clamp-2 opacity-60 leading-relaxed relative z-10 ${isSelected ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
+        {note.preview || note.content || 'No content'}
+      </p>
+      <div className="flex items-center gap-2 mt-3 relative z-10 opacity-50 group-hover:opacity-100 transition-opacity">
+        <span className="flex items-center gap-1 text-[9px] font-medium">
+          <ClockIcon size={10} />
+          {formatDate(note.updated_at)}
+        </span>
+      </div>
+    </button>
+  )
+}
+
 
 function debounce(fn, ms) {
   let timeout
@@ -218,10 +269,10 @@ export default function Notes() {
   const [knowledgeBases, setKnowledgeBases] = useState([])
   const [isSavingToKb, setIsSavingToKb] = useState(false)
   const [loadingKbs, setLoadingKbs] = useState(false)
-  const [groupBy, setGroupBy] = useState('none') // none, type, topic, date
+  const [groupBy, setGroupBy] = useState('date') // none, type, topic, date
   const [expandedFolders, setExpandedFolders] = useState({})
   const [notesSidebarWidth, setNotesSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem('chatter-notes-sidebar-width')
+    const saved = localStorage.getItem('cio-intelligence-hub-notes-sidebar-width')
     return saved ? parseInt(saved, 10) : 320
   })
   const [isNotesSidebarResizing, setIsNotesSidebarResizing] = useState(false)
@@ -230,6 +281,8 @@ export default function Notes() {
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false)
   const [selectionPosition, setSelectionPosition] = useState(null)
   const [showHighlightPicker, setShowHighlightPicker] = useState(false)
+  const [viewMode, setViewMode] = useState('list')
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
   const searchTimeoutRef = useRef(null)
   const textareaRef = useRef(null)
   const floatingToolbarRef = useRef(null)
@@ -302,6 +355,36 @@ export default function Notes() {
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    const handleCreateFromUrl = async (e) => {
+      const { title, content, note_type } = e.detail
+      try {
+        const note = await createNote(title || 'Untitled', content || '', [], note_type || 'rich')
+        setSelectedNoteId(note.id)
+        setIsEditing(true)
+        setEditTitle(note.title)
+        setEditContent(note.content)
+        setEditTags('')
+        setSelectionPosition(null)
+        setShowTypeSelector(false)
+        setToast({ type: 'success', message: 'Note created from link' })
+        setTimeout(() => textareaRef.current?.focus(), 100)
+      } catch (err) {
+        setToast({ type: 'error', message: 'Failed to create note' })
+      }
+    }
+    const handleOpenFromUrl = (e) => {
+      const { noteId } = e.detail
+      handleSelectNote(noteId)
+    }
+    window.addEventListener('create-note-from-url', handleCreateFromUrl)
+    window.addEventListener('open-note-from-url', handleOpenFromUrl)
+    return () => {
+      window.removeEventListener('create-note-from-url', handleCreateFromUrl)
+      window.removeEventListener('open-note-from-url', handleOpenFromUrl)
+    }
   }, [])
 
 const handleSelectNote = useCallback((noteId) => {
@@ -665,7 +748,7 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
 
   const stopNotesSidebarResize = useCallback(() => {
     setIsNotesSidebarResizing(false)
-    localStorage.setItem('chatter-notes-sidebar-width', notesSidebarWidth.toString())
+    localStorage.setItem('cio-intelligence-hub-notes-sidebar-width', notesSidebarWidth.toString())
   }, [notesSidebarWidth])
 
   const resizeNotesSidebar = useCallback((e) => {
@@ -1520,8 +1603,8 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Group By:</span>
-              <select 
-                value={groupBy} 
+              <select
+                value={groupBy}
                 onChange={(e) => setGroupBy(e.target.value)}
                 className="text-[10px] font-bold bg-transparent border-none outline-none text-[var(--accent-primary)] cursor-pointer hover:underline"
               >
@@ -1531,8 +1614,25 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
                 <option value="date">Date</option>
               </select>
             </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">View:</span>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
+                title="List view"
+              >
+                <ListIcon size={14} />
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
+                title="Grid view"
+              >
+                <GridIcon size={14} />
+              </button>
+            </div>
             {groupBy !== 'none' && (
-              <button 
+              <button
                 onClick={() => setExpandedFolders({})}
                 className="text-[10px] font-bold text-[var(--text-muted)] hover:text-[var(--text)]"
               >
@@ -1548,7 +1648,30 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto custom-scrollbar"
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true) }}
+          onDragLeave={() => setIsDraggingOver(false)}
+          onDrop={async (e) => {
+            e.preventDefault()
+            setIsDraggingOver(false)
+            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.md') || f.name.endsWith('.txt'))
+            if (files.length === 0) return
+            for (const file of files) {
+              const content = await file.text()
+              const title = file.name.replace(/\.(md|txt)$/i, '')
+              await createNote(title, content, [], 'simple')
+            }
+            setToast({ type: 'success', message: `Imported ${files.length} file${files.length !== 1 ? 's' : ''}` })
+          }}
+        >
+          {isDraggingOver && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--accent-primary)]/10 border-2 border-dashed border-[var(--accent-primary)] rounded-xl m-2">
+              <div className="flex flex-col items-center gap-2">
+                <FileTextIcon size={32} className="text-[var(--accent-primary)]" />
+                <span className="text-sm font-bold text-[var(--accent-primary)]">Drop .md files to import</span>
+              </div>
+            </div>
+          )}
           {isLoading && notes.length === 0 ? (
             <div className="flex items-center justify-center h-32">
               <div className="animate-spin h-5 w-5 border-2 border-current rounded-full" style={{ color: 'var(--text-tertiary)', borderRightColor: 'transparent' }} />
@@ -1570,31 +1693,49 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
               )}
             </div>
           ) : (
-            <div className="p-2 space-y-1">
-              {pinnedNotes.length > 0 && groupBy === 'none' && (
+            <div className={`p-2 ${viewMode === 'grid' ? 'grid grid-cols-2 gap-2' : 'space-y-1'}`}>
+              {viewMode === 'list' && pinnedNotes.length > 0 && groupBy === 'none' && (
                 <>
                   <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--text-tertiary)' }}>
                     <PinIcon size={14} />
                     Pinned
                   </div>
                   {pinnedNotes.map((note) => (
-                    <NoteListItem 
-                      key={note.id} 
-                      note={note} 
-                      isSelected={selectedNoteId === note.id} 
-                      onSelect={handleSelectNote} 
+                    <NoteListItem
+                      key={note.id}
+                      note={note}
+                      isSelected={selectedNoteId === note.id}
+                      onSelect={handleSelectNote}
                     />
                   ))}
                   <div className="my-2 border-t" style={{ borderColor: 'var(--border)' }} />
                 </>
               )}
 
+              {viewMode === 'grid' && pinnedNotes.length > 0 && groupBy === 'none' && (
+                <>
+                  <div className="col-span-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                    <PinIcon size={14} />
+                    Pinned
+                  </div>
+                  {pinnedNotes.map((note) => (
+                    <NoteGridItem
+                      key={note.id}
+                      note={note}
+                      isSelected={selectedNoteId === note.id}
+                      onSelect={handleSelectNote}
+                    />
+                  ))}
+                </>
+              )}
+
               {Object.entries(groupedNotes).map(([groupName, groupNotes]) => {
                 const isExpanded = groupBy === 'none' || expandedFolders[groupName]
+                const NoteItem = viewMode === 'grid' ? NoteGridItem : NoteListItem
                 return (
-                  <div key={groupName} className="mb-2">
+                  <div key={groupName} className={viewMode === 'grid' ? 'contents' : 'mb-2'}>
                     {groupBy !== 'none' && (
-                      <button 
+                      <button
                         onClick={() => toggleFolder(groupName)}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[var(--surface)] transition-all group/folder"
                       >
@@ -1610,15 +1751,15 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
                         </span>
                       </button>
                     )}
-                    
+
                     {isExpanded && (
-                      <div className={`space-y-1 ${groupBy !== 'none' ? 'ml-4 mt-1 border-l-2 border-[var(--glass-border)] pl-2' : ''}`}>
+                      <div className={viewMode === 'grid' ? 'col-span-2 grid grid-cols-2 gap-2' : 'space-y-1'}>
                         {groupNotes.map((note) => (
-                          <NoteListItem 
-                            key={note.id} 
-                            note={note} 
-                            isSelected={selectedNoteId === note.id} 
-                            onSelect={handleSelectNote} 
+                          <NoteItem
+                            key={note.id}
+                            note={note}
+                            isSelected={selectedNoteId === note.id}
+                            onSelect={handleSelectNote}
                           />
                         ))}
                       </div>
@@ -1849,6 +1990,27 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
                       )}
                     </div>
                     <button
+                      onClick={() => {
+                        const shareUrl = `${window.location.origin}/notes/${selectedNote.id}`
+                        navigator.clipboard.writeText(shareUrl)
+                        setToast({ type: 'success', message: 'Link copied to clipboard' })
+                      }}
+                      className="p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-all"
+                      title="Copy link"
+                    >
+                      <LinkIcon size={20} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedNote.content)
+                        setToast({ type: 'success', message: 'Content copied to clipboard' })
+                      }}
+                      className="p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-all"
+                      title="Copy to clipboard"
+                    >
+                      <CopyIcon size={20} />
+                    </button>
+                    <button
                       onClick={() => { loadKnowledgeBases(); setShowKbModal(true) }}
                       className="p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-all"
                       title="Save to knowledge base"
@@ -1976,10 +2138,44 @@ ${actions.length > 0 ? actions.map((a, i) => `- ${i + 1}. ${a.item}${a.owner ? `
                         )}
                         
                         <div className="flex-1" />
-                        
+
+                        {/* Voice Dictation Button */}
+                        <button
+                          onClick={() => {
+                            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                              setToast({ type: 'error', message: 'Speech recognition not supported in this browser' })
+                              return
+                            }
+                            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
+                            recognition.continuous = true
+                            recognition.interimResults = true
+                            recognition.lang = 'en-US'
+                            recognition.onresult = (event) => {
+                              let transcript = ''
+                              for (let i = event.resultIndex; i < event.results.length; i++) {
+                                transcript += event.results[i][0].transcript
+                              }
+                              setEditContent(prev => prev + transcript)
+                            }
+                            recognition.onerror = () => {
+                              setToast({ type: 'error', message: 'Voice recognition error' })
+                            }
+                            recognition.start()
+                            setToast({ type: 'info', message: 'Voice dictation started...' })
+                            setTimeout(() => {
+                              recognition.stop()
+                              setToast({ type: 'success', message: 'Voice dictation stopped' })
+                            }, 10000)
+                          }}
+                          className="p-2 rounded-xl glass-button text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-all"
+                          title="Voice dictation"
+                        >
+                          <MicIcon size={16} />
+                        </button>
+
                         {/* Templates Button */}
                         <div className="relative group/templates">
-                          <button 
+                          <button
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-button text-[var(--accent-primary)] font-bold text-xs"
                             onClick={() => {
                               if (noteType === 'meeting') {

@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Create the data directory for persistence
-RUN mkdir -p /root/.chatter
+RUN mkdir -p /root/.cio-intelligence-hub
 
 EXPOSE 8000
 

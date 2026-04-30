@@ -180,7 +180,7 @@ Capture off-topic ideas here to revisit later:
 -
 
 ---
-*Meeting Minutes by Chatter*`,
+*Meeting Minutes by CIO Intelligence Hub*`,
     tags: ['meeting'],
   },
 

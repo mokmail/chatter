@@ -1,9 +1,13 @@
+// Core chat hook - manages all chat state and backend communication.
+// Handles: messages, sessions, models, config, streaming, follow-ups, artifacts.
+// Exposes action functions (send, edit, delete, branch, fork, etc.) for the UI.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 
 const API_BASE = '/api'
 
 export const useChat = () => {
+  // Core chat state
   const [messages, setMessages] = useState([])
   const [models, setModels] = useState([])
   const [currentModel, setCurrentModel] = useState('')
@@ -13,18 +17,21 @@ export const useChat = () => {
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState(null)
   const [sessionKnowledgeBases, setSessionKnowledgeBases] = useState([])
+  const [sessionKnowledgeBaseId, setSessionKnowledgeBaseId] = useState(null)
   const [sessions, setSessions] = useState([])
   const [currentSessionId, setCurrentSessionId] = useState(null)
   const [followups, setFollowups] = useState({})
   const [artifacts, setArtifacts] = useState({})
   const [activeArtifact, setActiveArtifact] = useState(null)
+  // Ref for aborting in-progress fetch requests (stop generation)
   const abortControllerRef = useRef(null)
 
+  // On mount: load config, chat history, available models, and sessions
   useEffect(() => {
     loadConfig()
     loadHistory()
     loadModels()
-    loadSessions()
+    loadSessions(null)
   }, [])
 
   const loadConfig = async () => {
@@ -46,25 +53,36 @@ export const useChat = () => {
       const res = await axios.get(`${API_BASE}/history`)
       setMessages(res.data.messages)
       if (res.data.knowledge_base_ids) setSessionKnowledgeBases(res.data.knowledge_base_ids)
+      if (res.data.knowledge_base_id) setSessionKnowledgeBaseId(res.data.knowledge_base_id)
+      else setSessionKnowledgeBaseId(null)
     } catch (err) {
       console.error('Failed to load history:', err)
     }
   }
 
-  const loadSessions = async () => {
+  const loadSessions = async (knowledgeBaseId = undefined) => {
     try {
-      const res = await axios.get(`${API_BASE}/sessions`)
+      const params = {}
+      if (knowledgeBaseId === null) {
+        // Load only non-KB sessions (main chat)
+        params.knowledge_base_id = '__none__'
+      } else if (knowledgeBaseId) {
+        params.knowledge_base_id = knowledgeBaseId
+      }
+      const res = await axios.get(`${API_BASE}/sessions`, { params })
       setSessions(res.data.sessions || [])
     } catch (err) {
       console.error('Failed to load sessions:', err)
     }
   }
 
+  // Helper: applies session mutations from API responses (session_id, messages, sessions list)
   const applySessionResponse = (data) => {
     if (!data) return
     if (data.session_id) setCurrentSessionId(data.session_id)
     if (Array.isArray(data.messages)) setMessages(data.messages)
     if (Array.isArray(data.sessions)) setSessions(data.sessions)
+    if (data.knowledge_base_id !== undefined) setSessionKnowledgeBaseId(data.knowledge_base_id || null)
   }
 
   const loadModels = async (providerId = null) => {
@@ -83,6 +101,9 @@ export const useChat = () => {
     await loadModels(providerId)
   }, [])
 
+  // Send a chat message and stream the response.
+  // - parentId: used for branching (editing a prior message creates a new branch in the conversation tree)
+  // - skipAddUser: when true, doesn't add a new user message (used when editing existing messages)
   const sendMessage = useCallback(async (text, knowledgeBaseIds = [], files = [], notes = [], parentId = null, skipAddUser = false) => {
     if (!text.trim() && files.length === 0 && notes.length === 0) return
 
@@ -123,6 +144,7 @@ export const useChat = () => {
         throw new Error(errMsg)
       }
 
+      // Stream the response body chunk by chunk, updating the assistant message in real time
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
@@ -141,6 +163,7 @@ export const useChat = () => {
           )
         )
       }
+      // Refresh from server to get properly saved state
       await loadHistory()
       await loadSessions()
     } catch (err) {
@@ -156,8 +179,10 @@ export const useChat = () => {
     }
   }, [currentModel, currentProviderId])
 
-  // --- Agentic Tool Calling ---
-  const sendAgentMessage = useCallback(async (text, enableNotesTools = true) => {
+  // Agentic chat variant - the model has access to tool calling (notes CRUD, web search).
+  // enableNotesTools: lets the agent create/update/delete notes autonomously.
+  // enableWebSearch: lets the agent query the web.
+  const sendAgentMessage = useCallback(async (text, enableNotesTools = true, enableWebSearch = false) => {
     if (!text.trim()) return
 
     const userMsg = { id: Date.now().toString(), role: 'user', content: text, timestamp: Date.now() / 1000 }
@@ -176,6 +201,7 @@ export const useChat = () => {
           model: currentModel,
           provider_id: currentProviderId,
           enable_notes_tools: enableNotesTools,
+          enable_web_search: enableWebSearch,
         }),
         signal: abortControllerRef.current.signal,
       })
@@ -222,10 +248,12 @@ export const useChat = () => {
     }
   }, [currentModel, currentProviderId])
 
+  // Abort the current streaming response
   const stopGeneration = useCallback(() => {
     if (abortControllerRef.current) abortControllerRef.current.abort()
   }, [])
 
+  // Delete all messages in the current session and start fresh
   const clearHistory = async () => {
     try {
       await axios.delete(`${API_BASE}/history`)
@@ -236,6 +264,7 @@ export const useChat = () => {
     }
   }
 
+  // Save provider/model configuration to the backend
   const saveConfig = async (newConfig) => {
     try {
       const res = await axios.post(`${API_BASE}/config`, newConfig)
@@ -249,6 +278,7 @@ export const useChat = () => {
     }
   }
 
+  // Persist the currently selected model/provider to the backend
   const updateActiveSelection = (modelId, providerId) => {
     setCurrentModel(modelId)
     setCurrentProviderId(providerId)
@@ -388,6 +418,9 @@ export const useChat = () => {
       const res = await axios.post(`${API_BASE}/sessions/switch`, { session_id: sessionId })
       setMessages(res.data.messages)
       setCurrentSessionId(sessionId)
+      if (res.data.knowledge_base_id !== undefined) setSessionKnowledgeBaseId(res.data.knowledge_base_id || null)
+      else setSessionKnowledgeBaseId(null)
+      if (res.data.knowledge_base_ids) setSessionKnowledgeBases(res.data.knowledge_base_ids)
       await loadSessions()
       return res.data
     } catch (err) {
@@ -449,6 +482,21 @@ export const useChat = () => {
     }
   }
 
+  const createKBSsession = async (knowledgeBaseId) => {
+    try {
+      const res = await axios.post(`${API_BASE}/sessions/create`, { knowledge_base_id: knowledgeBaseId })
+      setMessages(res.data.messages || [])
+      setCurrentSessionId(res.data.session_id)
+      setSessionKnowledgeBaseId(knowledgeBaseId)
+      setSessionKnowledgeBases(knowledgeBaseId ? [knowledgeBaseId] : [])
+      await loadSessions()
+      return res.data
+    } catch (err) {
+      console.error('Failed to create KB session:', err)
+      throw err
+    }
+  }
+
   return {
     messages,
     models,
@@ -470,6 +518,8 @@ export const useChat = () => {
     loadModels,
     refreshModels,
     sessionKnowledgeBases,
+    setSessionKnowledgeBases,
+    sessionKnowledgeBaseId,
     sessions,
     currentSessionId,
     editMessage,
@@ -486,6 +536,7 @@ export const useChat = () => {
     deleteAllSessions,
     copyToClipboard,
     loadSessions,
+    createKBSsession,
     followups,
     setFollowups,
     generateFollowups,

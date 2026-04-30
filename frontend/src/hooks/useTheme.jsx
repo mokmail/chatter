@@ -4,14 +4,14 @@ const ThemeContext = createContext(undefined)
 
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
-    const stored = localStorage.getItem('chatter-theme')
+    const stored = localStorage.getItem('cio-intelligence-hub-theme')
     if (stored === 'light' || stored === 'dark') return stored
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
   })
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('chatter-theme', theme)
+    localStorage.setItem('cio-intelligence-hub-theme', theme)
     const meta = document.querySelector('meta[name="theme-color"]')
     if (meta) {
       meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#09090b')

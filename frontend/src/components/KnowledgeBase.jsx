@@ -21,83 +21,170 @@ import {
   CheckIcon,
   BrainIcon,
   LoadingSpinner,
+  GlobeIcon,
+  GithubIcon,
+  ServerIcon,
+  CloudIcon,
+  FolderOpenIcon,
+  WorkflowIcon,
+  LinkIcon,
+  RefreshIcon,
 } from './common/Icons'
 
-// Enhanced Knowledge Base Types with better icons
+// Source Types for Knowledge Base
+const SOURCE_TYPES = {
+  notes: { 
+    id: 'notes', 
+    label: 'Notes', 
+    description: 'Personal notes and text content', 
+    color: '#8b5cf6', 
+    icon: <NotesIcon size={18} />,
+    fields: [
+      { key: 'content', label: 'Content', type: 'textarea', default: '', help: 'Paste or type your notes content' },
+    ]
+  },
+  files: { 
+    id: 'files', 
+    label: 'Files', 
+    description: 'Upload PDF, DOC, TXT files', 
+    color: '#6366f1', 
+    icon: <FileIcon size={18} />,
+    fields: [
+      { key: 'files', label: 'Upload Files', type: 'file', accept: '.pdf,.txt,.md,.doc,.docx,.csv,.json', help: 'Select files to upload and add to knowledge base' },
+      { key: 'allowedTypes', label: 'Allowed File Types', type: 'text', default: '.pdf,.txt,.md,.doc,.docx,.csv,.json', help: 'Comma-separated file extensions' },
+      { key: 'maxFileSize', label: 'Max File Size (MB)', type: 'number', default: 50, help: 'Maximum file size for uploads' },
+    ]
+  },
+  url: { 
+    id: 'url', 
+    label: 'URL', 
+    description: 'Crawl web pages and articles', 
+    color: '#10b981', 
+    icon: <GlobeIcon size={18} />,
+    fields: [
+      { key: 'url', label: 'URL', type: 'text', default: '', help: 'Starting URL to crawl', required: true },
+      { key: 'crawlDepth', label: 'Crawl Depth', type: 'select', options: ['1', '2', '3', '5', '10'], default: '1', help: 'How many levels deep to crawl' },
+      { key: 'maxPages', label: 'Max Pages', type: 'number', default: 100, help: 'Maximum pages to index' },
+      { key: 'respectRobots', label: 'Respect Robots.txt', type: 'toggle', default: true, help: 'Follow robots.txt rules' },
+      { key: 'followLinks', label: 'Follow Links', type: 'toggle', default: true, help: 'Crawl linked pages' },
+      { key: 'excludePatterns', label: 'Exclude Patterns', type: 'text', default: '/api/,/login,/admin', help: 'URL patterns to skip' },
+    ]
+  },
+  repository: { 
+    id: 'repository', 
+    label: 'Repository', 
+    description: 'Clone and index Git repos', 
+    color: '#f59e0b', 
+    icon: <GithubIcon size={18} />,
+    fields: [
+      { key: 'repoUrl', label: 'Repository URL', type: 'text', default: '', help: 'Git repository URL (HTTPS or SSH)', required: true },
+      { key: 'branch', label: 'Branch', type: 'text', default: 'main', help: 'Branch to clone' },
+      { key: 'depth', label: 'Clone Depth', type: 'select', options: ['1', '10', 'full'], default: '1', help: 'Git history depth' },
+      { key: 'filePatterns', label: 'File Patterns', type: 'text', default: '*.py,*.js,*.ts,*.md,*.txt', help: 'Glob patterns to include' },
+      { key: 'excludePatterns', label: 'Exclude Patterns', type: 'text', default: 'node_modules/,__pycache__,.git/,dist/,build/', help: 'Paths to exclude' },
+      { key: 'parseCode', label: 'Parse Code Structure', type: 'toggle', default: true, help: 'Extract functions and classes' },
+      { key: 'accessToken', label: 'Access Token', type: 'password', default: '', help: 'For private repositories' },
+    ]
+  },
+  api: { 
+    id: 'api', 
+    label: 'API', 
+    description: 'Fetch data from APIs', 
+    color: '#f97316', 
+    icon: <ServerIcon size={18} />,
+    fields: [
+      { key: 'name', label: 'Source Name', type: 'text', default: '', help: 'Friendly name for this API source', required: true },
+      { key: 'apiEndpoint', label: 'API Endpoint', type: 'text', default: '', help: 'API URL endpoint', required: true },
+      { key: 'method', label: 'HTTP Method', type: 'select', options: ['GET', 'POST', 'PUT'], default: 'GET', help: 'Request method' },
+      { key: 'authType', label: 'Auth Type', type: 'select', options: ['none', 'bearer', 'api_key', 'basic', 'oauth2'], default: 'bearer', help: 'Authentication method' },
+      { key: 'apiKey', label: 'API Key', type: 'password', default: '', help: 'Authentication key' },
+      { key: 'headers', label: 'Custom Headers', type: 'textarea', default: '', help: 'JSON: {"Authorization": "Bearer ..."}' },
+      { key: 'queryParams', label: 'Query Params', type: 'text', default: '', help: 'URL query parameters' },
+      { key: 'refreshInterval', label: 'Refresh Interval (min)', type: 'number', default: 60, help: 'Auto-refresh data interval' },
+      { key: 'transformScript', label: 'Transform Script', type: 'textarea', default: '', help: 'JavaScript to transform API response' },
+    ]
+  },
+  directory: { 
+    id: 'directory', 
+    label: 'Directory', 
+    description: 'Sync local directory files', 
+    color: '#06b6d4', 
+    icon: <FolderOpenIcon size={18} />,
+    fields: [
+      { key: 'name', label: 'Source Name', type: 'text', default: '', help: 'Friendly name for this directory', required: true },
+      { key: 'directoryPath', label: 'Directory Path', type: 'text', default: '', help: 'Local directory path to sync', required: true },
+      { key: 'watchChanges', label: 'Watch for Changes', type: 'toggle', default: true, help: 'Auto-reindex when files change' },
+      { key: 'filePatterns', label: 'File Patterns', type: 'text', default: '*.md,*.txt,*.pdf,*.docx', help: 'Glob patterns to include' },
+      { key: 'excludePatterns', label: 'Exclude Patterns', type: 'text', default: '.git/,node_modules/,__pycache__/', help: 'Paths to exclude' },
+      { key: 'recursive', label: 'Recursive', type: 'toggle', default: true, help: 'Include subdirectories' },
+    ]
+  },
+  service: { 
+    id: 'service', 
+    label: 'Service', 
+    description: 'Connect external services', 
+    color: '#8b5cf6', 
+    icon: <CloudIcon size={18} />,
+    fields: [
+      { key: 'name', label: 'Source Name', type: 'text', default: '', help: 'Friendly name', required: true },
+      { key: 'serviceType', label: 'Service Type', type: 'select', options: ['notion', 'confluence', 'jira', 'slack', 'discord', 'github', 'gitlab', 'linear', 'trello'], default: 'notion', help: 'Service provider' },
+      { key: 'accessToken', label: 'Access Token', type: 'password', default: '', help: 'OAuth or API access token', required: true },
+      { key: 'workspace', label: 'Workspace', type: 'text', default: '', help: 'Workspace or organization ID' },
+      { key: 'syncFrequency', label: 'Sync Frequency', type: 'select', options: ['realtime', 'hourly', 'daily', 'weekly'], default: 'hourly', help: 'How often to sync' },
+      { key: 'includeArchived', label: 'Include Archived', type: 'toggle', default: false, help: 'Include archived content' },
+    ]
+  },
+  workflow: { 
+    id: 'workflow', 
+    label: 'Workflow', 
+    description: 'Automated data pipelines', 
+    color: '#ec4899', 
+    icon: <WorkflowIcon size={18} />,
+    fields: [
+      { key: 'name', label: 'Workflow Name', type: 'text', default: '', help: 'Name for this workflow', required: true },
+      { key: 'workflowType', label: 'Workflow Type', type: 'select', options: ['etl', 'scraping', 'aggregation', 'custom'], default: 'etl', help: 'Type of data pipeline' },
+      { key: 'schedule', label: 'Schedule (Cron)', type: 'text', default: '0 0 * * *', help: 'Cron schedule (default: daily midnight)' },
+      { key: 'inputSources', label: 'Input Sources', type: 'text', default: '', help: 'Comma-separated source IDs' },
+      { key: 'transformPipeline', label: 'Transform Pipeline', type: 'textarea', default: '', help: 'JSON array of transformation steps' },
+      { key: 'outputDestination', label: 'Output Destination', type: 'select', options: ['vectorstore', 'file', 'api'], default: 'vectorstore', help: 'Where to store processed data' },
+      { key: 'notifyOnComplete', label: 'Notify on Complete', type: 'toggle', default: false, help: 'Send notification when done' },
+    ]
+  },
+}
+
+// Knowledge Base Type - unified, all KBs are the same type
 const KB_TYPES = [
   {
-    id: 'notes',
-    label: 'Notes',
-    description: 'Personal notes and text snippets',
-    color: '#8b5cf6',
-    icon: <NotesIcon size={20} />,
-    settings: [
-      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject Entire Document' },
-      { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
-      { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
-      { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Max characters per chunk' },
-      { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 100, help: 'Characters overlapping between chunks' },
-    ],
-  },
-  {
-    id: 'files',
-    label: 'Documents',
-    description: 'PDF, DOC, TXT files for RAG',
+    id: 'knowledge',
+    label: 'Knowledge Base',
+    description: 'Container for multiple data sources',
     color: '#6366f1',
-    icon: <FileIcon size={20} />,
-    settings: [
-      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject Entire Document' },
-      { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
-      { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
-      { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Max characters per chunk' },
-      { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 100, help: 'Characters overlapping between chunks' },
-      { key: 'allowedTypes', label: 'Allowed File Types', type: 'text', default: '.pdf,.txt,.md,.doc,.docx,.csv', help: 'Comma-separated list of allowed file extensions' },
-    ],
-  },
-  {
-    id: 'web',
-    label: 'Web Search',
-    description: 'Search results as knowledge source',
-    color: '#10b981',
-    icon: <SearchIcon size={20} />,
-    settings: [
-      { key: 'searchProvider', label: 'Search Provider', type: 'select', options: ['Google', 'Bing', 'DuckDuckGo', 'SearXNG', 'serpapi'], default: 'Google', help: 'Search engine for web results' },
-      { key: 'maxResults', label: 'Max Results', type: 'number', default: 5, help: 'Number of search results to include' },
-      { key: 'maxContentLength', label: 'Max Content Length', type: 'number', default: 10000, help: 'Max characters per result' },
-      { key: 'chunkSize', label: 'Chunk Size', type: 'number', default: 1500, help: 'Max characters per chunk' },
-      { key: 'embeddingModel', label: 'Embedding Model', type: 'select', options: ['nomic-embed-text', 'all-minilm', 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002'], default: 'nomic-embed-text', help: 'Model used for generating embeddings' },
-    ],
-  },
-  {
-    id: 'api',
-    label: 'API Sources',
-    description: 'External API data integration',
-    color: '#f59e0b',
-    icon: <CodeIcon size={20} />,
-    settings: [
-      { key: 'apiEndpoint', label: 'API Endpoint', type: 'text', default: '', help: 'Base URL for the API' },
-      { key: 'apiKey', label: 'API Key', type: 'password', default: '', help: 'Authentication key for the API' },
-      { key: 'headers', label: 'Custom Headers', type: 'textarea', default: '', help: 'JSON format: {"Authorization": "Bearer ..."}' },
-      { key: 'method', label: 'HTTP Method', type: 'select', options: ['GET', 'POST', 'PUT'], default: 'GET' },
-      { key: 'responseFormat', label: 'Response Format', type: 'select', options: ['json', 'xml', 'text'], default: 'json' },
-      { key: 'refreshInterval', label: 'Refresh Interval (min)', type: 'number', default: 60, help: 'Auto-refresh data every X minutes' },
-    ],
-  },
-  {
-    id: 'vectorstore',
-    label: 'Vector DB',
-    description: 'Chroma, Qdrant, Pinecone collections',
-    color: '#ec4899',
     icon: <DatabaseIcon size={20} />,
     settings: [
-      { key: 'vectorDB', label: 'Vector Database', type: 'select', options: ['chroma', 'qdrant', 'milvus', 'pinecone', 'pgvector'], default: 'chroma', help: 'Vector database backend' },
-      { key: 'collectionName', label: 'Collection Name', type: 'text', default: '', help: 'Name of the vector collection' },
-      { key: 'embeddingModel', label: 'Embedding Model', type: 'select', options: ['nomic-embed-text', 'all-minilm', 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002'], default: 'nomic-embed-text', help: 'Model used for embeddings' },
-      { key: 'embeddingDimensions', label: 'Embedding Dimensions', type: 'select', options: ['256', '384', '768', '1536', '3072'], default: '768', help: 'Higher = more detail, slower' },
-      { key: 'indexMethod', label: 'Indexing Method', type: 'select', options: ['hnsw', 'flat', 'ivf'], default: 'hnsw', help: 'HNSW is faster for large datasets' },
+      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject All Content' },
+      { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
+      { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
+      { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk' },
+      { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
+      { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
+      { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
+      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
+      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
     ],
   },
 ]
+
+// Default source config for each type
+const DEFAULT_SOURCE_CONFIG = {
+  notes: { content: '' },
+  files: { files: [], allowedTypes: '.pdf,.txt,.md,.doc,.docx,.csv,.json', maxFileSize: 50 },
+  url: { url: '', crawlDepth: '1', maxPages: 100, respectRobots: true, followLinks: true, excludePatterns: '/api/,/login,/admin' },
+  repository: { repoUrl: '', branch: 'main', depth: '1', filePatterns: '*.py,*.js,*.ts,*.md,*.txt', excludePatterns: 'node_modules/,__pycache__,.git/,dist/,build/', parseCode: true, accessToken: '' },
+  api: { name: '', apiEndpoint: '', method: 'GET', authType: 'bearer', apiKey: '', headers: '', queryParams: '', refreshInterval: 60, transformScript: '' },
+  directory: { name: '', directoryPath: '', watchChanges: true, filePatterns: '*.md,*.txt,*.pdf,*.docx', excludePatterns: '.git/,node_modules/,__pycache__/', recursive: true },
+  service: { name: '', serviceType: 'notion', accessToken: '', workspace: '', syncFrequency: 'hourly', includeArchived: false },
+  workflow: { name: '', workflowType: 'etl', schedule: '0 0 * * *', inputSources: '', transformPipeline: '', outputDestination: 'vectorstore', notifyOnComplete: false },
+}
 
 const getKBTypeInfo = (kbTypeId) => {
   return KB_TYPES.find(t => t.id === kbTypeId) || KB_TYPES[0]
@@ -189,6 +276,24 @@ const SettingRow = ({ field, value, onChange }) => {
             ))}
           </select>
         )
+      case 'file':
+        return (
+          <div className="w-full">
+            <input
+              type="file"
+              multiple
+              accept={field.accept || "*"}
+              onChange={(e) => onChange(Array.from(e.target.files))}
+              className="w-full px-3 py-1.5 rounded-lg text-sm file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-medium file:bg-[var(--accent)] file:text-white hover:file:bg-[var(--accent-hover)]"
+              style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            />
+            {value && value.length > 0 && (
+              <div className="mt-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {value.length} file{value.length !== 1 ? 's' : ''} selected
+              </div>
+            )}
+          </div>
+        )
       default:
         return null
     }
@@ -202,23 +307,399 @@ const SettingRow = ({ field, value, onChange }) => {
       </div>
       <div className="w-48 ml-4">{renderInput()}</div>
     </div>
+)
+}
+
+const SourceFieldInput = ({ field, value, onChange }) => {
+  const inputValue = value ?? field.default ?? ''
+  switch (field.type) {
+    case 'text':
+      return (
+        <input
+          type="text"
+          value={inputValue}
+          onChange={e => onChange(e.target.value)}
+          className="w-full px-2 py-1 rounded text-xs"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      )
+    case 'number':
+      return (
+        <input
+          type="number"
+          value={inputValue}
+          onChange={e => onChange(parseInt(e.target.value) || 0)}
+          className="w-20 px-2 py-1 rounded text-xs"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      )
+    case 'select':
+      return (
+        <select
+          value={inputValue}
+          onChange={e => onChange(e.target.value)}
+          className="w-full px-2 py-1 rounded text-xs"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        >
+          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      )
+    case 'toggle':
+      return (
+        <button
+          onClick={() => onChange(!inputValue)}
+          className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+          style={{ backgroundColor: inputValue ? 'var(--accent)' : 'var(--border)' }}
+        >
+          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${inputValue ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      )
+    case 'textarea':
+      return (
+        <textarea
+          value={inputValue}
+          onChange={e => onChange(e.target.value)}
+          className="w-full px-2 py-1 rounded text-xs resize-none"
+          rows={2}
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      )
+    case 'password':
+      return (
+        <input
+          type="password"
+          value={inputValue}
+          onChange={e => onChange(e.target.value)}
+          className="w-full px-2 py-1 rounded text-xs"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        />
+      )
+    case 'file':
+      return (
+        <div>
+          <input
+            ref={field.fileInputRef}
+            type="file"
+            multiple
+            accept={field.accept || '*'}
+            onChange={e => onChange(Array.from(e.target.files))}
+            className="hidden"
+          />
+          <button
+            onClick={() => field.fileInputRef?.current?.click()}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors w-full"
+            style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--accent)', border: '1px dashed var(--border)' }}
+          >
+            <UploadIcon size={12} />
+            {inputValue && inputValue.length > 0 ? `${inputValue.length} file${inputValue.length !== 1 ? 's' : ''} selected` : 'Choose files...'}
+          </button>
+          {inputValue && inputValue.length > 0 && (
+            <div className="mt-1 space-y-0.5">
+              {inputValue.map((f, i) => (
+                <div key={i} className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                  <FileIcon size={9} />
+                  <span className="truncate">{f.name}</span>
+                  <span>({(f.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    default:
+      return null
+  }
+}
+
+const SourceTypePicker = ({ onSelect }) => {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {Object.values(SOURCE_TYPES).map(type => (
+        <button
+          key={type.id}
+          onClick={() => onSelect(type.id)}
+          className="flex items-center gap-2 p-2 rounded-lg border transition-colors hover:border-opacity-100"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)', borderWidth: '1px' }}
+        >
+          <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: type.color + '20', color: type.color }}>
+            {type.icon}
+          </div>
+          <div className="text-left">
+            <div className="text-xs font-medium" style={{ color: 'var(--text)' }}>{type.label}</div>
+            <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{type.description}</div>
+          </div>
+        </button>
+      ))}
+    </div>
   )
 }
 
-const SettingsPanel = ({ kb, onSave }) => {
+const SourceConfigForm = ({ sourceType, draft, onDraftChange, onCancel, onAdd }) => {
+  const sourceInfo = SOURCE_TYPES[sourceType]
+  if (!sourceInfo) return null
+
+  return (
+    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: sourceInfo.color + '20', color: sourceInfo.color }}>
+            {sourceInfo.icon}
+          </div>
+          <div>
+            <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{sourceInfo.label}</div>
+            <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{sourceInfo.description}</div>
+          </div>
+        </div>
+        <button onClick={onCancel} className="p-1 rounded hover:bg-[var(--bg-secondary)]" style={{ color: 'var(--text-tertiary)' }}>
+          <XIcon size={14} />
+        </button>
+      </div>
+      <div className="space-y-2">
+        {sourceInfo.fields.map(field => (
+          <div key={field.key} className={field.type === 'file' ? 'space-y-1' : 'flex items-center gap-2'}>
+            {field.type === 'file' ? (
+              <>
+                <div>
+                  <div className="text-xs font-medium" style={{ color: 'var(--text)' }}>{field.label}</div>
+                  {field.help && <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{field.help}</div>}
+                </div>
+                <SourceFieldInput
+                  field={field}
+                  value={draft[field.key]}
+                  onChange={val => onDraftChange({ ...draft, [field.key]: val })}
+                />
+              </>
+            ) : (
+              <>
+                <div className="flex-1">
+                  <div className="text-xs font-medium" style={{ color: 'var(--text)' }}>{field.label}</div>
+                  {field.help && <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{field.help}</div>}
+                </div>
+                <div className="w-48">
+                  <SourceFieldInput
+                    field={field}
+                    value={draft[field.key]}
+                    onChange={val => onDraftChange({ ...draft, [field.key]: val })}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+        <button
+          onClick={onCancel}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onAdd}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium"
+          style={{ background: 'var(--accent)', color: '#fff' }}
+        >
+          Add Source
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const formatSyncTime = (timestamp) => {
+  const seconds = Math.floor(Date.now() / 1000) - timestamp
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
+const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSync, onEmbed, onDelete, onViewFile, onDeleteFile, onUploadFiles }) => {
+  const stInfo = SOURCE_TYPES[source.type] || SOURCE_TYPES.notes
+  const status = source.status || 'active'
+  const lastSynced = source.last_synced
+  const sourceSummary = source.config?.url || source.config?.repoUrl || source.config?.apiEndpoint || source.config?.directoryPath || source.config?.serviceType || ''
+  const fileCount = sourceFiles.length || source.files_count || 0
+  const chunkCount = sourceFiles.reduce((sum, file) => sum + (file.chunks_count || 0), 0) || source.chunks_count || 0
+  const hasFiles = fileCount > 0
+  const [filesExpanded, setFilesExpanded] = useState(fileCount > 0)
+  const fileInputRef = useRef(null)
+
+  return (
+    <div className="rounded-2xl border bg-[var(--surface)] p-4 space-y-3" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: stInfo.color + '20', color: stInfo.color }}>
+          {isSyncing ? <LoadingSpinner size={16} /> : stInfo.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{source.name || stInfo.label}</div>
+          <div className="text-[11px] mt-1 text-[var(--text-tertiary)] truncate">
+            {stInfo.label}{sourceSummary ? ' · ' + sourceSummary.slice(0, 40) : ''}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] px-2 py-1 rounded-full font-medium"
+            style={{
+              backgroundColor: status === 'active' ? 'var(--accent-subtle, #10b98120)' : status === 'syncing' ? '#f59e0b20' : '#ef444420',
+              color: status === 'active' ? 'var(--accent)' : status === 'syncing' ? '#f59e0b' : '#ef4444'
+            }}>
+            {status}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-[11px] text-[var(--text-secondary)]">
+        <div className="rounded-lg border border-[var(--border)]/50 bg-[var(--bg-secondary)] p-2">
+          <div className="font-semibold text-[var(--text)]">{fileCount}</div>
+          <div>Files</div>
+        </div>
+        <div className="rounded-lg border border-[var(--border)]/50 bg-[var(--bg-secondary)] p-2">
+          <div className="font-semibold text-[var(--text)]">{chunkCount}</div>
+          <div>Chunks</div>
+        </div>
+        <div className="rounded-lg border border-[var(--border)]/50 bg-[var(--bg-secondary)] p-2">
+          <div className="font-semibold text-[var(--text)]">{lastSynced ? formatSyncTime(lastSynced) : 'Never'}</div>
+          <div>Last synced</div>
+        </div>
+      </div>
+
+      {hasFiles && (
+        <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setFilesExpanded(!filesExpanded)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors hover:bg-[var(--surface-hover)]"
+            style={{ color: 'var(--text)' }}
+          >
+            <span className="flex items-center gap-1.5">
+              <FileIcon size={13} />
+              {fileCount} file{fileCount !== 1 ? 's' : ''}
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 transition-transform duration-200"
+              style={{ transform: filesExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+          {filesExpanded && (
+            <div className="border-t max-h-48 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+              {sourceFiles.map((file, idx) => (
+                <div
+                  key={file.id || idx}
+                  className="flex items-center gap-2 px-3 py-2 text-[11px] border-b last:border-b-0 hover:bg-[var(--surface-hover)] transition-colors group"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <FileIcon size={11} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+                  <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>
+                    {file.content_url ? (
+                      <a href={file.content_url} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: 'var(--accent)' }}>
+                        {file.name}
+                      </a>
+                    ) : file.name}
+                  </span>
+                  {file.chunks_count > 0 && (
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--accent-subtle, #10b98120)', color: 'var(--accent)' }}>
+                      {file.chunks_count} chunks
+                    </span>
+                  )}
+                  {file.is_embedded && (
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: '#3b82f620', color: '#3b82f6' }}>indexed</span>
+                  )}
+                  <span className="shrink-0" style={{ color: 'var(--text-tertiary)' }}>
+                    {file.size_bytes ? (file.size_bytes < 1024 ? file.size_bytes + ' B' : file.size_bytes < 1048576 ? (file.size_bytes / 1024).toFixed(1) + ' KB' : (file.size_bytes / 1048576).toFixed(1) + ' MB') : ''}
+                  </span>
+                  <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onViewFile && (
+                      <button onClick={() => onViewFile(file)} className="p-1 rounded hover:bg-[var(--accent)]/10" style={{ color: 'var(--text-tertiary)' }} title="View">
+                        <EyeIcon size={12} />
+                      </button>
+                    )}
+                    {onDeleteFile && (
+                      <button onClick={() => onDeleteFile(file.id)} className="p-1 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-tertiary)' }} title="Delete file">
+                        <TrashIcon size={11} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.txt,.md,.doc,.docx,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.svg,.log"
+          className="hidden"
+          onChange={e => {
+            if (e.target.files.length > 0 && onUploadFiles) {
+              onUploadFiles(Array.from(e.target.files))
+              e.target.value = ''
+            }
+          }}
+        />
+        {source.type === 'files' && (
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200"
+            style={{ backgroundColor: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--border)' }}
+          >
+            <UploadIcon size={12} />
+            Upload Files
+          </button>
+        )}
+        <button
+          onClick={onSync}
+          disabled={isSyncing}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50"
+          style={{ backgroundColor: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--border)' }}
+        >
+          {isSyncing ? <LoadingSpinner size={12} /> : <RefreshIcon size={12} />}
+          Sync / Update
+        </button>
+        <button
+          onClick={onEmbed}
+          disabled={!hasFiles || isEmbedding}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: hasFiles ? 'var(--accent)' : 'var(--bg-secondary)', color: hasFiles ? '#fff' : 'var(--text-tertiary)' }}
+        >
+          <DatabaseIcon size={12} />
+          Index & Embed
+        </button>
+        <button
+          onClick={onDelete}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200"
+          style={{ backgroundColor: 'var(--surface)', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
+        >
+          <TrashIcon size={12} />
+          Remove
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const SettingsPanel = ({ kb, onSave, models = [] }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const [config, setConfig] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
 
+  const modelOptions = ['default', ...(models || []).map(m => m.id || m.name)]
+
   useEffect(() => {
-    // Merge core KB fields with config for the settings UI
     setConfig({
       ...kb.config,
       retrieval_mode: kb.retrieval_mode,
       hybrid_search: kb.hybrid_search,
       reranking: kb.reranking,
       chunk_size: kb.chunk_size,
-      chunk_overlap: kb.chunk_overlap
+      chunk_overlap: kb.chunk_overlap,
+      kb_chat_enabled: kb.config?.kb_chat_enabled ?? true,
+      chat_model: kb.config?.chat_model ?? 'default',
+      temperature: kb.config?.temperature ?? '0.7',
+      max_context_chunks: kb.config?.max_context_chunks ?? 10,
     })
     setHasChanges(false)
   }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap])
@@ -229,25 +710,25 @@ const SettingsPanel = ({ kb, onSave }) => {
   }
 
   const handleSave = () => {
-    // Filter out core fields for the backend update
-    const coreFields = ['retrieval_mode', 'hybrid_search', 'reranking', 'chunk_size', 'chunk_overlap']
+    const coreFields = ['retrieval_mode', 'hybrid_search', 'reranking', 'chunk_size', 'chunk_overlap', 'kb_chat_enabled', 'chat_model', 'temperature', 'max_context_chunks']
     const updateData = {}
     const configData = { ...config }
-    
+
     coreFields.forEach(field => {
       if (config[field] !== undefined) {
         updateData[field] = config[field]
         delete configData[field]
       }
     })
-    
+
     onSave({ ...updateData, config: configData })
     setHasChanges(false)
   }
 
   return (
-    <div className="p-4" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-      <div className="flex items-center justify-between mb-4">
+    <div className="overflow-y-auto" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 pb-2">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: typeInfo.color + '20' }}>
             {React.cloneElement(typeInfo.icon, { style: { color: typeInfo.color } })}
@@ -271,113 +752,411 @@ const SettingsPanel = ({ kb, onSave }) => {
         )}
       </div>
 
-      <div className="space-y-1">
-        {typeInfo.settings.map(field => (
-          <SettingRow
-            key={field.key}
-            field={field}
-            value={config[field.key]}
-            onChange={(val) => handleChange(field.key, val)}
-          />
-        ))}
+
+      {/* Divider */}
+      <div className="border-t" style={{ borderColor: 'var(--border)' }} />
+
+      {/* Settings */}
+      <div className="p-4 space-y-1">
+        <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+          Settings
+        </h4>
+        {typeInfo.settings && typeInfo.settings.map(field => {
+          const dynamicField = field.key === 'chat_model' && modelOptions.length > 1
+            ? { ...field, options: modelOptions }
+            : field
+          return (
+            <SettingRow
+              key={field.key}
+              field={dynamicField}
+              value={config[field.key]}
+              onChange={(val) => handleChange(field.key, val)}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const SourcesPanel = ({ kb, kbFiles = [], onSave, onDeleteSource, onRefresh, onEmbedSource, isEmbedding, onViewFile, onDeleteFile, onUploadFilesToSource }) => {
+  const sources = kb.config?.sources || []
+  const [syncingSourceId, setSyncingSourceId] = useState(null)
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [addingSourceType, setAddingSourceType] = useState(null)
+  const [sourceDraft, setSourceDraft] = useState({})
+
+  const getSourceFiles = (sourceId) => kbFiles.filter(file => file.metadata?.source_id === sourceId)
+
+  const handleSyncSource = async (sourceId) => {
+    setSyncingSourceId(sourceId)
+    try {
+      const resp = await fetch(`/api/knowledge/${kb.id}/sources/${sourceId}/sync`, { method: 'POST' })
+      const data = await resp.json()
+      if (data.error) {
+        alert(`Sync failed: ${data.error}`)
+      }
+    } catch (err) {
+      console.error('Sync failed:', err)
+      alert('Sync failed')
+    } finally {
+      setSyncingSourceId(null)
+      if (onRefresh) onRefresh()
+    }
+  }
+
+  const handleSyncAll = async () => {
+    if (sources.length === 0) return
+    setSyncingAll(true)
+    try {
+      const resp = await fetch(`/api/knowledge/${kb.id}/sync`, { method: 'POST' })
+      const data = await resp.json()
+      if (data.error) {
+        alert(`Sync failed: ${data.error}`)
+      }
+    } catch (err) {
+      console.error('Sync all failed:', err)
+      alert('Sync failed')
+    } finally {
+      setSyncingAll(false)
+      if (onRefresh) onRefresh()
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {sources.length > 0 && !addingSourceType && (
+            <button
+              onClick={handleSyncAll}
+              disabled={syncingAll}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--border)' }}
+            >
+              {syncingAll ? <LoadingSpinner size={12} /> : <RefreshIcon size={12} />}
+              {syncingAll ? 'Syncing...' : 'Sync All'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Type-specific actions */}
-      <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-center gap-2">
-          {kb.kb_type === 'web' && (
-            <button
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all"
-              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-              </svg>
-              Test Search
-            </button>
+      {addingSourceType ? (
+        <SourceConfigForm
+          sourceType={addingSourceType}
+          draft={sourceDraft}
+          onDraftChange={setSourceDraft}
+          onCancel={() => { setAddingSourceType(null); setSourceDraft({}) }}
+          onAdd={async () => {
+            const sourceInfo = SOURCE_TYPES[addingSourceType]
+            const sourceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
+            let fileCount = 0
+            if (addingSourceType === 'files' && sourceDraft.files && sourceDraft.files.length > 0) {
+              fileCount = sourceDraft.files.length
+              for (const file of sourceDraft.files) {
+                const formData = new FormData()
+                formData.append('file', file)
+                formData.append('source_id', sourceId)
+                await fetch(`/api/knowledge/${kb.id}/upload`, {
+                  method: 'POST',
+                  body: formData,
+                })
+              }
+            }
+            const config = { ...sourceDraft }
+            delete config.files
+            const newSource = {
+              id: sourceId,
+              type: addingSourceType,
+              name: sourceDraft.name || (addingSourceType === 'files' && fileCount > 0 ? `Files (${fileCount} files)` : sourceDraft.repoUrl || sourceDraft.url || sourceDraft.apiEndpoint || sourceDraft.directoryPath || sourceInfo.label),
+              config,
+              created_at: Date.now() / 1000,
+              status: 'active',
+              files_count: fileCount,
+              last_synced: fileCount > 0 ? Date.now() / 1000 : undefined,
+            }
+            onSave({ config: { ...(kb.config || {}), sources: [...sources, newSource] } })
+            setAddingSourceType(null)
+            setSourceDraft({})
+          }}
+        />
+      ) : (
+        <>
+          <SourceTypePicker onSelect={(type) => {
+            setAddingSourceType(type)
+            setSourceDraft(DEFAULT_SOURCE_CONFIG[type] || {})
+          }} />
+          {sources.length > 0 && (
+            <div className="space-y-3 mt-3">
+              {sources.map((source, idx) => (
+                <SourceListItem
+                  key={source.id || idx}
+                  source={source}
+                    sourceFiles={getSourceFiles(source.id)}
+                    isSyncing={syncingSourceId === source.id}
+                    isEmbedding={isEmbedding}
+                    onSync={() => handleSyncSource(source.id)}
+                    onEmbed={() => onEmbedSource?.(source.id)}
+                    onDelete={() => onDeleteSource(source.id)}
+                    onViewFile={onViewFile}
+                    onDeleteFile={(fileId) => onDeleteFile?.(fileId, source.id)}
+                    onUploadFiles={(files) => onUploadFilesToSource?.(source.id, files)}
+                />
+              ))}
+            </div>
           )}
-          {kb.kb_type === 'api' && (
-            <button
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all"
-              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
-              Test API
-            </button>
-          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Source Configuration Component - for adding/configuring data sources
+const SourceConfigModal = ({ isOpen, onClose, sourceType, onAdd }) => {
+  const [config, setConfig] = useState({})
+  const sourceInfo = SOURCE_TYPES[sourceType]
+
+  useEffect(() => {
+    if (sourceType && DEFAULT_SOURCE_CONFIG[sourceType]) {
+      setConfig(DEFAULT_SOURCE_CONFIG[sourceType])
+    }
+  }, [sourceType])
+
+  if (!isOpen || !sourceInfo) return null
+
+  const handleChange = (key, value) => {
+    setConfig({ ...config, [key]: value })
+  }
+
+  const handleAdd = () => {
+    onAdd({ type: sourceType, config })
+    onClose()
+    setConfig(DEFAULT_SOURCE_CONFIG[sourceType] || {})
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50 animate-backdrop"
+      style={{ backgroundColor: 'var(--modal-backdrop)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-[560px] max-h-[85vh] rounded-xl overflow-hidden animate-modal"
+        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--modal-shadow)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: sourceInfo.color + '20' }}>
+              <span style={{ color: sourceInfo.color }}>{sourceInfo.icon}</span>
+            </div>
+            <div>
+              <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Add {sourceInfo.label} Source</h3>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{sourceInfo.description}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--surface-hover)] transition-colors">
+            <XIcon size={16} />
+          </button>
+        </div>
+
+        {/* Fields */}
+        <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh]">
+          {sourceInfo.fields.map(field => (
+            <SettingRow
+              key={field.key}
+              field={field}
+              value={config[field.key]}
+              onChange={(val) => handleChange(field.key, val)}
+            />
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ background: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleAdd}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ background: 'var(--gradient-primary)', color: '#fff' }}
+          >
+            Add Source
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// Premium Knowledge Base Item with glassmorphism
-const KnowledgeBaseItem = ({ kb, active, onClick, onDelete }) => {
+// Premium Knowledge Base Card with full insights
+const KnowledgeBaseCard = ({ kb, active, onClick, onDelete }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const itemCount = kb.file_count || 0
-  
+  const embeddedCount = kb.files?.filter(f => f.is_embedded).length || 0
+  const totalTokens = kb.files?.reduce((sum, f) => sum + (f.token_count || 0), 0) || 0
+  const totalChunks = kb.files?.reduce((sum, f) => sum + (f.chunks_count || 0), 0) || 0
+
+  // Format large numbers
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    return num.toString()
+  }
+
+  // Format relative time
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Never'
+    const diff = Date.now() / 1000 - timestamp
+    const minutes = Math.floor(diff / 60)
+    const hours = Math.floor(diff / 3600)
+    const days = Math.floor(diff / 86400)
+
+    if (minutes < 1) return 'Just now'
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    if (days === 1) return 'Yesterday'
+    if (days < 7) return `${days}d ago`
+    return new Date(timestamp * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+
+  const isFullyEmbedded = itemCount > 0 && embeddedCount === itemCount
+  const isPartiallyEmbedded = embeddedCount > 0 && embeddedCount < itemCount
+
   return (
     <div
       onClick={onClick}
       className={`
-        group flex items-center gap-3 w-full px-3 py-3 rounded-xl text-sm transition-all duration-300 text-left cursor-pointer
-        ${active 
-          ? 'glass-card-strong border-[var(--accent-primary)]/30 glow-accent-sm' 
-          : 'hover:bg-[var(--surface)]/40 border border-transparent hover:border-[var(--glass-border)]'
+        group relative flex flex-col w-full p-4 rounded-2xl text-sm transition-all duration-300 cursor-pointer
+        ${active
+          ? 'glass-card-strong border-[var(--accent-primary)]/30 glow-accent-sm scale-[1.02]'
+          : 'glass-card hover:border-[var(--accent-primary)]/20 hover:shadow-lg hover:scale-[1.01]'
         }
       `}
     >
-      {/* Icon Container with Gradient Background */}
-      <div 
-        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300"
-        style={{
-          background: active 
-            ? `linear-gradient(135deg, ${typeInfo.color}30, ${typeInfo.color}10)` 
-            : 'var(--surface)',
-          border: `1px solid ${active ? typeInfo.color + '40' : 'var(--glass-border)'}`,
-          color: active ? typeInfo.color : 'var(--text-tertiary)'
-        }}
-      >
-        <span className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
-          {typeInfo.icon}
+      {/* Active Indicator */}
+      {active && (
+        <div className="absolute -left-0.5 top-4 bottom-4 w-1 rounded-full bg-gradient-to-b from-[var(--accent-primary)] to-[var(--accent-secondary)]" />
+      )}
+
+      {/* Header with Icon & Actions */}
+      <div className="flex items-start gap-3 mb-3">
+        {/* Icon Container with Gradient Background */}
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300"
+          style={{
+            background: `linear-gradient(135deg, ${typeInfo.color}20, ${typeInfo.color}08)`,
+            border: `1px solid ${active ? typeInfo.color + '40' : typeInfo.color + '20'}`,
+            color: typeInfo.color
+          }}
+        >
+          <span className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+            {React.cloneElement(typeInfo.icon, { size: 24 })}
+          </span>
+        </div>
+
+        {/* Title & Type */}
+        <div className="flex-1 min-w-0 pt-0.5">
+          <h3 className={`font-semibold text-base truncate ${active ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
+            {kb.name}
+          </h3>
+          <div className="flex items-center gap-2 text-xs mt-1">
+            <span className="font-medium" style={{ color: typeInfo.color }}>{typeInfo.label}</span>
+            {kb.config?.sources && kb.config.sources.length > 0 && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
+                <span className="text-[var(--text-muted)]">{kb.config.sources.length} sources</span>
+              </>
+            )}
+            <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
+            <span className="text-[var(--text-muted)]">ID: {kb.id?.slice(0, 8)}</span>
+          </div>
+        </div>
+
+        {/* Delete Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (onDelete) onDelete(kb.id)
+          }}
+          className="
+            opacity-0 group-hover:opacity-100
+            p-2 rounded-lg glass-button
+            text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10
+            transition-all duration-200 hover:scale-110
+          "
+          title="Delete Knowledge Base"
+        >
+          <TrashIcon size={16} />
+        </button>
+      </div>
+
+      {/* Description Preview */}
+      {kb.description && (
+        <p className="text-xs text-[var(--text-muted)] line-clamp-2 mb-3 leading-relaxed">
+          {kb.description}
+        </p>
+      )}
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Files</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{formatNumber(itemCount)}</span>
+        </div>
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Tokens</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{formatNumber(totalTokens)}</span>
+        </div>
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Chunks</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{formatNumber(totalChunks)}</span>
+        </div>
+      </div>
+
+      {/* Footer with Status & Last Updated */}
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/50">
+        {/* Embedding Status */}
+        <div className="flex items-center gap-2">
+          {itemCount === 0 ? (
+            <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />
+              Empty
+            </span>
+          ) : isFullyEmbedded ? (
+            <span className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-medium">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+              </svg>
+              Indexed
+            </span>
+          ) : isPartiallyEmbedded ? (
+            <span className="flex items-center gap-1.5 text-[10px] text-amber-500 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              {embeddedCount}/{itemCount} Indexed
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />
+              Not Indexed
+            </span>
+          )}
+        </div>
+
+        {/* Last Updated */}
+        <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+          </svg>
+          {formatTimeAgo(kb.updated_at)}
         </span>
       </div>
-      
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className={`font-semibold truncate ${active ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
-          {kb.name}
-        </div>
-        <div className="flex items-center gap-2 text-xs mt-0.5">
-          <span style={{ color: typeInfo.color }}>{typeInfo.label}</span>
-          <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
-          <span className="text-[var(--text-muted)]">{itemCount} items</span>
-        </div>
-      </div>
-      
-      {/* Delete Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          if (onDelete) onDelete(kb.id)
-        }}
-        className="
-          opacity-0 group-hover:opacity-100 
-          p-2 rounded-lg glass-button 
-          text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10
-          transition-all duration-200 hover:scale-110
-        "
-        title="Delete Knowledge Base"
-      >
-        <TrashIcon size={16} />
-      </button>
     </div>
   )
 }
 
-const FileItem = ({ file, onDelete, onView }) => {
+const FileCard = ({ file, onDelete, onView, onEmbed, isEmbedding }) => {
   const formatSize = (bytes) => {
     if (!bytes) return '0 B'
     const k = 1024
@@ -386,58 +1165,166 @@ const FileItem = ({ file, onDelete, onView }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  // Format relative time
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown'
+    const diff = Date.now() / 1000 - timestamp
+    const minutes = Math.floor(diff / 60)
+    const hours = Math.floor(diff / 3600)
+    const days = Math.floor(diff / 86400)
+
+    if (minutes < 1) return 'Just now'
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    if (days === 1) return 'Yesterday'
+    if (days < 7) return `${days}d ago`
+    return new Date(timestamp * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+
+  // Get file icon color based on type
+  const getFileColor = (fileType, fileName) => {
+    const ext = fileName?.split('.').pop()?.toLowerCase() || ''
+    const type = (fileType || '').toLowerCase()
+
+    if (['pdf'].includes(ext) || type.includes('pdf')) return '#ef4444' // red
+    if (['doc', 'docx'].includes(ext) || type.includes('word')) return '#3b82f6' // blue
+    if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('excel') || type.includes('csv')) return '#22c55e' // green
+    if (['ppt', 'pptx'].includes(ext) || type.includes('powerpoint')) return '#f97316' // orange
+    if (['md', 'txt', 'text'].includes(ext) || type.includes('text') || type.includes('markdown')) return '#64748b' // slate
+    if (['js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'java', 'c', 'cpp', 'go', 'rs'].includes(ext)) return '#8b5cf6' // purple
+    if (['json', 'xml', 'yaml', 'yml'].includes(ext)) return '#eab308' // yellow
+    if (['html', 'htm', 'css'].includes(ext)) return '#ec4899' // pink
+    return '#6366f1' // indigo default
+  }
+
+  const fileColor = getFileColor(file.file_type, file.name)
+  const fileExt = file.name?.split('.').pop()?.toUpperCase() || file.file_type?.toUpperCase() || 'FILE'
+
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg transition-all"
-      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-        style={{ backgroundColor: 'var(--accent-subtle)' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4" style={{ color: 'var(--accent)' }}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>{file.name}</div>
-        <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-          <span>{file.file_type}</span>
-          <span>·</span>
-          <span>{formatSize(file.size_bytes)}</span>
-          <span>·</span>
-          <span>{file.token_count || 0} tokens</span>
-          {file.is_embedded && (
-            <>
-              <span>·</span>
-              <span className="flex items-center gap-0.5 text-blue-500 font-medium">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                </svg>
-                {file.chunks_count || 0} chunks
-              </span>
-            </>
-          )}
+    <div className="group relative flex flex-col p-4 rounded-2xl text-sm transition-all duration-300 glass-card hover:border-[var(--accent-primary)]/20 hover:shadow-lg hover:scale-[1.01]">
+      {/* Header with Icon & Actions */}
+      <div className="flex items-start gap-3 mb-3">
+        {/* Icon Container with File Extension Badge */}
+        <div
+          className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 relative"
+          style={{
+            background: `linear-gradient(135deg, ${fileColor}20, ${fileColor}08)`,
+            border: `1px solid ${fileColor}30`,
+            color: fileColor
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+          {/* Extension Badge */}
+          <span
+            className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
+            style={{ background: fileColor, color: '#fff' }}
+          >
+            {fileExt.slice(0, 4)}
+          </span>
+        </div>
+
+        {/* File Name & Type */}
+        <div className="flex-1 min-w-0 pt-0.5">
+          <h3 className="font-semibold text-base truncate text-[var(--text)]">
+            {file.name}
+          </h3>
+          <div className="flex items-center gap-2 text-xs mt-1">
+            <span style={{ color: fileColor }}>{file.file_type || 'Unknown'}</span>
+            <span className="w-1 h-1 rounded-full bg-[var(--text-muted)]" />
+            <span className="text-[var(--text-muted)]">ID: {file.id?.slice(0, 8)}</span>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            onClick={() => onView(file)}
+            className="p-2 rounded-lg glass-button text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/10 transition-all duration-200 hover:scale-110"
+            title="View content"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onDelete(file.id)}
+            className="p-2 rounded-lg glass-button text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-all duration-200 hover:scale-110"
+            title="Delete"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194.855-2.166 2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
+            </svg>
+          </button>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onView(file)}
-          className="p-1.5 rounded-md transition-colors hover:bg-[var(--surface-hover)]"
-          style={{ color: 'var(--text-tertiary)' }}
-          title="View content"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Size</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{formatSize(file.size_bytes)}</span>
+        </div>
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Tokens</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{(file.token_count || 0).toLocaleString()}</span>
+        </div>
+        <div className="flex flex-col p-2 rounded-lg bg-[var(--surface)]/50 border border-[var(--border)]/50">
+          <span className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] tracking-wide">Chunks</span>
+          <span className="text-sm font-semibold text-[var(--text)]">{(file.chunks_count || 0).toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* Footer with Status, Embed Button & Last Updated */}
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/50">
+        {/* Left: Embedding Status or Embed Button */}
+        <div className="flex items-center gap-2">
+          {file.is_embedded ? (
+            <span className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-medium">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+              </svg>
+              Indexed
+            </span>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEmbed?.(file.id)
+              }}
+              disabled={isEmbedding}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: 'var(--gradient-primary)',
+                color: '#fff',
+              }}
+            >
+              {isEmbedding ? (
+                <>
+                  <span className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  Indexing...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                  </svg>
+                  Index & Embed
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Right: Last Updated */}
+        <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
           </svg>
-        </button>
-        <button
-          onClick={() => onDelete(file.id)}
-          className="p-1.5 rounded-md transition-colors hover:bg-[var(--danger-subtle)] hover:text-[var(--danger-icon)]"
-          style={{ color: 'var(--text-tertiary)' }}
-          title="Delete"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194-.855-2.166-2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
-          </svg>
-        </button>
+          {formatTimeAgo(file.updated_at)}
+        </span>
       </div>
     </div>
   )
@@ -972,7 +1859,7 @@ const FilePreviewModal = ({ file, content, embeddingsData, onClose }) => {
   )
 }
 
-const KnowledgeBase = ({ onRefresh }) => {
+const KnowledgeBase = ({ onRefresh, models = [] }) => {
   const [kbs, setKbs] = useState([])
   const [selectedKB, setSelectedKB] = useState(null)
   const [selectedKBFiles, setSelectedKBFiles] = useState([])
@@ -982,15 +1869,30 @@ const KnowledgeBase = ({ onRefresh }) => {
   const [showSettings, setShowSettings] = useState(false)
   const [viewingFile, setViewingFile] = useState(null)
   const [viewingFileContent, setViewingFileContent] = useState(null)
-  const [newKBDir, setNewKBDir] = useState({ name: '', description: '', kb_type: 'notes' })
-  const [newItem, setNewItem] = useState({ name: '', content: '', url: '' })
+  const [newKBDir, setNewKBDir] = useState({ name: '', description: '', kb_type: 'knowledge' })
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
   const [showEmbeddings, setShowEmbeddings] = useState(false)
+  const [sourceAdded, setSourceAdded] = useState(false)
   const [embeddingsData, setEmbeddingsData] = useState([])
   const [loading, setLoading] = useState(true)
   const [embedProgress, setEmbedProgress] = useState(null)
+  const [addSourceStep, setAddSourceStep] = useState('pick') // 'pick', 'config', or 'success'
+  const [addSourceType, setAddSourceType] = useState(null)
+  const [addSourceConfig, setAddSourceConfig] = useState({})
   const fileInputRef = useRef(null)
+
+  // KB Chat state
+  const [showKBChat, setShowKBChat] = useState(false)
+  const [kbChatMessages, setKBChatMessages] = useState([])
+  const [kbChatInput, setKBChatInput] = useState('')
+  const [isKBChatStreaming, setIsKBChatStreaming] = useState(false)
+  const kbChatEndRef = useRef(null)
+  const kbChatAbortRef = useRef(null)
+  const [kbSessions, setKbSessions] = useState([])
+  const [activeKbSessionId, setActiveKbSessionId] = useState(null)
+  const [originalSessionId, setOriginalSessionId] = useState(null)
 
   useEffect(() => {
     fetchKBs()
@@ -1001,7 +1903,7 @@ const KnowledgeBase = ({ onRefresh }) => {
       fetchKBDetails(selectedKB.id)
       setShowSettings(false)
     }
-  }, [selectedKB])
+  }, [selectedKB?.id])
 
   const fetchKBs = async () => {
     try {
@@ -1021,6 +1923,9 @@ const KnowledgeBase = ({ onRefresh }) => {
       const res = await fetch(`/api/knowledge/${kbId}`)
       const data = await res.json()
       setSelectedKBFiles(data.files || [])
+      if (selectedKB && selectedKB.id === kbId) {
+        setSelectedKB({ ...selectedKB, ...data })
+      }
     } catch (err) {
       console.error('Failed to fetch KB details:', err)
     }
@@ -1034,7 +1939,7 @@ const KnowledgeBase = ({ onRefresh }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newKBDir),
       })
-      setNewKBDir({ name: '', description: '', kb_type: 'notes' })
+      setNewKBDir({ name: '', description: '', kb_type: 'knowledge' })
       setShowCreateModal(false)
       fetchKBs()
     } catch (err) {
@@ -1074,57 +1979,221 @@ const KnowledgeBase = ({ onRefresh }) => {
     }
   }
 
-  const handleAddItem = async () => {
-    if (!newItem.name.trim() || !selectedKB) return
-    try {
-      const payload = {
-        name: newItem.name,
-        content: newItem.content,
-        file_type: selectedKB.kb_type,
-        content_url: newItem.url || '',
+  const handleAddSource = async () => {
+    if (!addSourceType || !selectedKB) return
+    const sourceConfig = { ...addSourceConfig }
+    // Validate required fields
+    const sourceInfo = SOURCE_TYPES[addSourceType]
+    const requiredFields = sourceInfo?.fields?.filter(f => f.required) || []
+    for (const field of requiredFields) {
+      if (!sourceConfig[field.key]?.toString().trim()) {
+        alert(`Please fill in "${field.label}"`)
+        return
       }
-      await fetch(`/api/knowledge/${selectedKB.id}/files`, {
-        method: 'POST',
+    }
+
+    const sourceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
+
+    // Handle file uploads for files source type
+    let fileCount = 0
+    if (addSourceType === 'files' && sourceConfig.files && sourceConfig.files.length > 0) {
+      fileCount = sourceConfig.files.length
+      try {
+        setIsUploading(true)
+        for (const file of sourceConfig.files) {
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('source_id', sourceId)
+
+          await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
+            method: 'POST',
+            body: formData,
+          })
+        }
+        setIsUploading(false)
+        // Remove files from config since they're uploaded
+        delete sourceConfig.files
+      } catch (err) {
+        setIsUploading(false)
+        console.error('Failed to upload files:', err)
+        alert('Failed to upload files: ' + err.message)
+        return
+      }
+    }
+
+    try {
+      // Add source to KB config
+      const sources = selectedKB.config?.sources || []
+      const newSource = {
+        id: sourceId,
+        type: addSourceType,
+        name: sourceConfig.name || (addSourceType === 'files' && fileCount > 0 ? `Files (${fileCount} files)` : `Files Source (${new Date().toLocaleDateString()})`),
+        config: sourceConfig,
+        created_at: Date.now() / 1000,
+        status: 'active',
+      }
+      sources.push(newSource)
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ config: { ...selectedKB.config, sources } }),
       })
-      setNewItem({ name: '', content: '', url: '' })
-      setShowAddModal(false)
-      fetchKBDetails(selectedKB.id)
+      const data = await resp.json()
+      setSelectedKB({ ...selectedKB, ...data })
+      setSourceAdded(newSource)
+      setAddSourceStep('success')
       fetchKBs()
+      fetchKBDetails(selectedKB.id)
     } catch (err) {
-      console.error('Failed to add item:', err)
+      console.error('Failed to add source:', err)
+      alert('Failed to add source: ' + err.message)
     }
   }
 
-  const handleFileChange = async (e) => {
-    const files = e.target.files
+  const handleDeleteSource = async (sourceId) => {
+    if (!selectedKB) return
+    if (!window.confirm('Remove this source and all its fetched files? This cannot be undone.')) return
+    try {
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}/sources/${sourceId}`, { method: 'DELETE' })
+      const data = await resp.json()
+      if (data.error) {
+        alert(`Failed to remove source: ${data.error}`)
+        return
+      }
+      const sources = (selectedKB.config?.sources || []).filter(s => s.id !== sourceId)
+      const filesRemoved = data.files_removed || 0
+      setSelectedKB({ ...selectedKB, config: { ...selectedKB.config, sources }, files: selectedKB.files.filter(f => f.metadata?.source_id !== sourceId) })
+      fetchKBs()
+      fetchKBDetails(selectedKB.id)
+    } catch (err) {
+      console.error('Failed to remove source:', err)
+      alert('Failed to remove source')
+    }
+  }
+
+  const handleDropFiles = async (files) => {
     if (!files || files.length === 0 || !selectedKB) return
     setIsUploading(true)
+    setIsDragOver(false)
+    const sourceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
+    let uploadedCount = 0
     try {
       for (const file of files) {
         const formData = new FormData()
         formData.append('file', file)
-        
+        formData.append('source_id', sourceId)
+
         await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
           method: 'POST',
           body: formData,
         })
+        uploadedCount++
       }
+      
+      if (uploadedCount > 0) {
+        const sources = selectedKB.config?.sources || []
+        const newSource = {
+          id: sourceId,
+          type: 'files',
+          name: `Dropped Files (${uploadedCount} items)`,
+          config: {},
+          created_at: Date.now() / 1000,
+          status: 'active',
+        }
+        sources.push(newSource)
+        await fetch(`/api/knowledge/${selectedKB.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: { ...selectedKB.config, sources } }),
+        })
+      }
+
       fetchKBDetails(selectedKB.id)
       fetchKBs()
-      setShowAddModal(false)
     } catch (err) {
       console.error('Failed to upload files:', err)
       alert('Failed to upload files')
     } finally {
       setIsUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const handleUploadFilesToSource = async (sourceId, files) => {
+    if (!files || files.length === 0 || !selectedKB) return
+    setIsUploading(true)
+    let uploadedCount = 0
+    try {
+      for (const file of files) {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('source_id', sourceId)
+        await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+        uploadedCount++
+      }
+      if (uploadedCount > 0) {
+        const sources = selectedKB.config?.sources || []
+        const source = sources.find(s => s.id === sourceId)
+        if (source) {
+          const currentCount = source.files_count || 0
+          source.files_count = currentCount + uploadedCount
+          source.last_synced = Date.now() / 1000
+        }
+        await fetch(`/api/knowledge/${selectedKB.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: { ...selectedKB.config, sources } }),
+        })
+      }
+      fetchKBDetails(selectedKB.id)
+      fetchKBs()
+    } catch (err) {
+      console.error('Failed to upload files:', err)
+      alert('Failed to upload files')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isDragOver) setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set to false if we're actually leaving the container (not entering a child)
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDragOver(false)
+    }
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const files = e.dataTransfer.files
+    handleDropFiles(files)
   }
 
   const handleDeleteFile = async (fileId) => {
     if (!window.confirm('Delete this item?')) return
+    try {
+      await fetch(`/api/knowledge/${selectedKB.id}/files/${fileId}`, { method: 'DELETE' })
+      fetchKBDetails(selectedKB.id)
+      fetchKBs()
+    } catch (err) {
+      console.error('Failed to delete item:', err)
+    }
+  }
+
+  const handleDeleteFileFromSource = async (fileId, sourceId) => {
     try {
       await fetch(`/api/knowledge/${selectedKB.id}/files/${fileId}`, { method: 'DELETE' })
       fetchKBDetails(selectedKB.id)
@@ -1156,14 +2225,14 @@ const KnowledgeBase = ({ onRefresh }) => {
       const resp = await fetch(`/api/knowledge/${selectedKB.id}/embed`, { method: 'POST' })
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
-      
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        
+
         const chunk = decoder.decode(value)
         const lines = chunk.split('\n')
-        
+
         for (const line of lines) {
           if (line.startsWith('event: ')) {
             const eventType = line.slice(7).trim()
@@ -1172,7 +2241,7 @@ const KnowledgeBase = ({ onRefresh }) => {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              
+
               if (data.file_index !== undefined) {
                 setEmbedProgress(prev => ({
                   ...prev,
@@ -1214,6 +2283,129 @@ const KnowledgeBase = ({ onRefresh }) => {
     }
   }
 
+  const handleEmbedSource = async (sourceId) => {
+    if (!selectedKB) return
+    const sourceFiles = selectedKBFiles.filter(file => file.metadata?.source_id === sourceId)
+    setIsEmbedding(true)
+    setEmbedProgress({ status: 'starting', currentFile: null, filesDone: 0, totalFiles: sourceFiles.length, chunksCreated: 0 })
+    try {
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}/embed?source_id=${encodeURIComponent(sourceId)}`, { method: 'POST' })
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            continue
+          }
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.file_index !== undefined) {
+                setEmbedProgress(prev => ({
+                  ...prev,
+                  status: 'processing',
+                  currentFile: data.file_name,
+                  filesDone: data.file_index,
+                  totalFiles: data.file_count
+                }))
+              } else if (data.chunks_created !== undefined) {
+                setEmbedProgress(prev => ({
+                  ...prev,
+                  chunksCreated: (prev.chunksCreated || 0) + data.chunks_created
+                }))
+              } else if (data.status === 'ok') {
+                setEmbedProgress({
+                  status: 'complete',
+                  chunks: data.chunks,
+                  tokens: data.tokens,
+                  embedding_model: data.embedding_model,
+                  embedding_dimensions: data.embedding_dimensions
+                })
+                fetchKBDetails(selectedKB.id)
+                fetchKBs()
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', e)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to embed source:', err)
+      setEmbedProgress({ status: 'error', error: err.message })
+    } finally {
+      setTimeout(() => {
+        setIsEmbedding(false)
+        setTimeout(() => setEmbedProgress(null), 2000)
+      }, 1000)
+    }
+  }
+
+  const handleEmbedFile = async (fileId) => {
+    if (!selectedKB) return
+    setIsEmbedding(true)
+    setEmbedProgress({ status: 'starting', currentFile: null, filesDone: 0, totalFiles: 1, chunksCreated: 0 })
+    try {
+      const resp = await fetch(`/api/knowledge/${selectedKB.id}/embed?file_id=${fileId}`, { method: 'POST' })
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.file_index !== undefined) {
+                setEmbedProgress(prev => ({
+                  ...prev,
+                  status: 'processing',
+                  currentFile: data.file_name,
+                  filesDone: data.file_index,
+                  totalFiles: 1
+                }))
+              } else if (data.status === 'ok') {
+                setEmbedProgress({
+                  status: 'complete',
+                  chunks: data.chunks,
+                  tokens: data.tokens,
+                  embedding_model: data.embedding_model,
+                  embedding_dimensions: data.embedding_dimensions
+                })
+                fetchKBDetails(selectedKB.id)
+                fetchKBs()
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', e)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to embed file:', err)
+      setEmbedProgress({ status: 'error', error: err.message })
+    } finally {
+      setTimeout(() => {
+        setIsEmbedding(false)
+        setTimeout(() => setEmbedProgress(null), 2000)
+      }, 1000)
+    }
+  }
+
   const fetchEmbeddings = async () => {
     if (!selectedKB) return
     try {
@@ -1226,28 +2418,274 @@ const KnowledgeBase = ({ onRefresh }) => {
     }
   }
 
+  // KB Chat functions - using proper KB-scoped sessions
+  const loadKbSessions = async (kbId) => {
+    try {
+      const res = await fetch(`/api/sessions?knowledge_base_id=${kbId}`)
+      const data = await res.json()
+      setKbSessions(data.sessions || [])
+    } catch (err) {
+      console.error('Failed to load KB sessions:', err)
+    }
+  }
+
+  const handleStartKBChat = async () => {
+    if (!selectedKB) return
+    setShowKBChat(true)
+
+    // Save current session to restore later
+    try {
+      const sessionsResp = await fetch('/api/sessions?knowledge_base_id=__none__')
+      const sessionsData = await sessionsResp.json()
+      const currentSession = sessionsData.sessions?.[0]
+      if (currentSession) {
+        setOriginalSessionId(currentSession.id)
+      }
+    } catch (err) {
+      console.error('Failed to get original session:', err)
+    }
+
+    // Load KB sessions
+    await loadKbSessions(selectedKB.id)
+
+    // If there are existing sessions for this KB, switch to the most recent one
+    if (kbSessions.length > 0) {
+      await switchToKbSession(kbSessions[0].id)
+    } else {
+      // Create a new KB-scoped session
+      await createNewKbSession()
+    }
+  }
+
+  const switchToKbSession = async (sessionId) => {
+    try {
+      const resp = await fetch('/api/sessions/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      })
+      const data = await resp.json()
+      setActiveKbSessionId(sessionId)
+      // Load messages from this session
+      const historyResp = await fetch('/api/history')
+      const historyData = await historyResp.json()
+      setKBChatMessages(historyData.messages || [])
+    } catch (err) {
+      console.error('Failed to switch to KB session:', err)
+    }
+  }
+
+  const createNewKbSession = async () => {
+    if (!selectedKB) return
+    try {
+      const resp = await fetch('/api/sessions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ knowledge_base_id: selectedKB.id })
+      })
+      const data = await resp.json()
+      setActiveKbSessionId(data.session_id)
+      setKBChatMessages([])
+      await loadKbSessions(selectedKB.id)
+    } catch (err) {
+      console.error('Failed to create KB session:', err)
+    }
+  }
+
+  const deleteKbSession = async (sessionId) => {
+    try {
+      await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+      await loadKbSessions(selectedKB.id)
+      if (sessionId === activeKbSessionId) {
+        const remainingSessions = kbSessions.filter(s => s.id !== sessionId)
+        if (remainingSessions.length > 0) {
+          await switchToKbSession(remainingSessions[0].id)
+        } else {
+          await createNewKbSession()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete KB session:', err)
+    }
+  }
+
+  const handleCloseKBChat = () => {
+    setShowKBChat(false)
+    setKBChatInput('')
+    if (kbChatAbortRef.current) {
+      kbChatAbortRef.current.abort()
+      kbChatAbortRef.current = null
+    }
+    // Restore original session
+    if (originalSessionId) {
+      fetch('/api/sessions/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: originalSessionId })
+      }).catch(err => console.error('Failed to restore original session:', err))
+      setOriginalSessionId(null)
+    }
+    setActiveKbSessionId(null)
+    if (onRefresh) onRefresh()
+  }
+
+  const handleClearKBChat = async () => {
+    if (!activeKbSessionId) return
+    try {
+      await fetch('/api/history', { method: 'DELETE' })
+      setKBChatMessages([])
+    } catch (err) {
+      console.error('Failed to clear KB chat:', err)
+    }
+  }
+
+  const handleKBChatSubmit = async (e) => {
+    e?.preventDefault()
+    if (!kbChatInput.trim() || !selectedKB || isKBChatStreaming) return
+
+    const userMessage = { id: Date.now().toString(), role: 'user', content: kbChatInput, timestamp: Date.now() / 1000 }
+    setKBChatMessages(prev => [...prev, userMessage])
+    setKBChatInput('')
+    setIsKBChatStreaming(true)
+
+    try {
+      const chatModel = selectedKB.config?.chat_model !== 'default' ? selectedKB.config?.chat_model : undefined
+
+      kbChatAbortRef.current = new AbortController()
+
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage.content,
+          knowledge_base_ids: [selectedKB.id],
+          model: chatModel,
+        }),
+        signal: kbChatAbortRef.current.signal,
+      })
+
+      if (!resp.ok) {
+        throw new Error('Failed to get response')
+      }
+
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let assistantContent = ''
+
+      const assistantMsgId = (Date.now() + 1).toString()
+      setKBChatMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '', timestamp: Date.now() / 1000 }])
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        assistantContent += chunk
+        setKBChatMessages(prev =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId ? { ...msg, content: assistantContent } : msg
+          )
+        )
+      }
+
+      // Reload from backend to get final state with proper IDs
+      try {
+        const historyResp = await fetch('/api/history')
+        const historyData = await historyResp.json()
+        if (historyData.messages?.length) {
+          setKBChatMessages(historyData.messages)
+        }
+      } catch {}
+
+      await loadKbSessions(selectedKB.id)
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Failed to send KB chat message:', err)
+        setKBChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'error', content: 'Failed to get response. Please try again.', timestamp: Date.now() / 1000 }])
+      }
+    } finally {
+      setIsKBChatStreaming(false)
+      kbChatAbortRef.current = null
+    }
+  }
+
+  const handleSaveChatToKB = async (message) => {
+    if (!selectedKB || !message.content) return
+    try {
+      const payload = {
+        name: `Chat Response - ${new Date().toLocaleString()}`,
+        content: message.content,
+        file_type: 'text',
+        content_url: '',
+      }
+      await fetch(`/api/knowledge/${selectedKB.id}/files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      fetchKBDetails(selectedKB.id)
+      alert('Response saved to knowledge base!')
+    } catch (err) {
+      console.error('Failed to save chat to KB:', err)
+      alert('Failed to save response')
+    }
+  }
+
+  const handleSaveEntireChatToKB = async () => {
+    if (!selectedKB || kbChatMessages.length === 0) return
+    try {
+      // Format the entire chat as a transcript
+      const transcript = kbChatMessages.map(msg => {
+        const role = msg.role === 'user' ? 'User' : 'Assistant'
+        const time = new Date(msg.timestamp * 1000).toLocaleString()
+        return `[${time}] ${role}:\n${msg.content}\n`
+      }).join('\n---\n\n')
+
+      const payload = {
+        name: `Chat Transcript - ${new Date().toLocaleString()}`,
+        content: transcript,
+        file_type: 'text',
+        content_url: '',
+      }
+      await fetch(`/api/knowledge/${selectedKB.id}/files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      fetchKBDetails(selectedKB.id)
+      alert('Entire chat saved to knowledge base!')
+    } catch (err) {
+      console.error('Failed to save chat transcript:', err)
+      alert('Failed to save chat transcript')
+    }
+  }
+
+  useEffect(() => {
+    kbChatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [kbChatMessages])
+
   const selectedType = selectedKB ? getKBTypeInfo(selectedKB.kb_type) : null
 
   return (
     <div className="flex h-full bg-[var(--bg)]">
-      {/* Left sidebar - Premium glass design */}
-      <div className="w-80 border-r border-[var(--glass-border)] flex flex-col glass-card-strong">
+      {/* Left sidebar - Premium glass design - Wider for stacked cards */}
+      <div className="w-[480px] border-r border-[var(--glass-border)] flex flex-col glass-card-strong">
         {/* Header */}
         <div className="p-5 border-b border-[var(--glass-border)]">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)]/20 to-[var(--accent-secondary)]/10 
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)]/20 to-[var(--accent-secondary)]/10
                             flex items-center justify-center text-[var(--accent-primary)]">
                 <BrainIcon size={18} />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-[var(--text)]">Knowledge</h2>
+                <h2 className="text-sm font-bold text-[var(--text)]">Knowledge Bases</h2>
                 <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">RAG Context Sources</p>
               </div>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="p-2 rounded-lg glass-button text-[var(--accent-primary)] hover:scale-105 
+              className="p-2 rounded-lg glass-button text-[var(--accent-primary)] hover:scale-105
                         transition-all duration-200 glow-accent-sm"
               title="Create new knowledge base"
             >
@@ -1256,15 +2694,15 @@ const KnowledgeBase = ({ onRefresh }) => {
           </div>
         </div>
 
-        {/* Knowledge Base List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+        {/* Knowledge Base Card Stack - Single column layout */}
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <LoadingSpinner size={24} className="text-[var(--accent-primary)]" />
             </div>
           ) : kbs.length === 0 ? (
             <div className="text-center py-12 px-4">
-              <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center 
+              <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center
                               bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-secondary)]/5
                               border border-[var(--glass-border)]">
                 <SparklesIcon size={28} className="text-[var(--accent-primary)] opacity-60" />
@@ -1274,22 +2712,24 @@ const KnowledgeBase = ({ onRefresh }) => {
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="mt-4 px-4 py-2 rounded-lg text-xs font-semibold
-                          bg-[var(--gradient-primary)] text-white hover:scale-105 
+                          bg-[var(--gradient-primary)] text-white hover:scale-105
                           transition-all duration-200 glow-accent-sm"
               >
                 Create Knowledge Base
               </button>
             </div>
           ) : (
-            kbs.map((kb) => (
-              <KnowledgeBaseItem
-                key={kb.id}
-                kb={kb}
-                active={selectedKB?.id === kb.id}
-                onClick={() => setSelectedKB(kb)}
-                onDelete={handleDeleteKB}
-              />
-            ))
+            <div className="flex flex-col gap-4">
+              {kbs.map((kb) => (
+                <KnowledgeBaseCard
+                  key={kb.id}
+                  kb={kb}
+                  active={selectedKB?.id === kb.id}
+                  onClick={() => setSelectedKB(kb)}
+                  onDelete={handleDeleteKB}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -1313,6 +2753,22 @@ const KnowledgeBase = ({ onRefresh }) => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {selectedKB.config?.kb_chat_enabled !== false && (
+                  <button
+                    onClick={handleStartKBChat}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 hover:scale-105"
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      color: 'var(--accent)',
+                      border: '1px solid',
+                      borderColor: 'var(--accent)',
+                    }}
+                    title="Start chat with this knowledge base using RAG"
+                  >
+                    <SparklesIcon size={14} />
+                    Chat with Knowledge Bases
+                  </button>
+                )}
                 <button
                   onClick={() => setShowSettings(!showSettings)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
@@ -1420,7 +2876,7 @@ const KnowledgeBase = ({ onRefresh }) => {
             )}
 
             {showSettings && (
-              <div className="border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="border-b overflow-y-auto max-h-[50vh]" style={{ borderColor: 'var(--border)' }}>
                 {/* Information Info Grid */}
                 <div className="p-4 bg-[var(--bg-secondary)] border-b grid grid-cols-1 md:grid-cols-3 gap-3" style={{ borderColor: 'var(--border)' }}>
                   <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
@@ -1451,46 +2907,107 @@ const KnowledgeBase = ({ onRefresh }) => {
                   </div>
                 </div>
                 
-                <SettingsPanel 
-                  kb={selectedKB} 
-                  onSave={handleSaveSettings} 
+                <SettingsPanel
+                  kb={selectedKB}
+                  onSave={handleSaveSettings}
+                  onDeleteSource={handleDeleteSource}
                   onRefresh={() => fetchKBDetails(selectedKB.id)}
+                  models={models}
+                  onEmbedSource={handleEmbedSource}
+                  isEmbedding={isEmbedding}
                 />
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4">
-              {selectedKBFiles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>No items yet</h3>
-                  <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-                    Add {selectedType.label.toLowerCase()} to use as context in chats
-                  </p>
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="text-xs px-4 py-2 rounded-lg font-medium"
-                    style={{ background: 'var(--accent)', color: '#fff' }}
-                  >
-                    Add Your First Item
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
-                      {selectedKBFiles.length} item{selectedKBFiles.length !== 1 ? 's' : ''}
-                    </span>
+            <div
+              className={`flex-1 overflow-y-auto p-4 relative transition-all duration-300 ${
+                isDragOver ? 'bg-[var(--accent-primary)]/5' : ''
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {/* Drag Overlay */}
+              {isDragOver && (
+                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[var(--surface)]/90 backdrop-blur-sm rounded-xl border-2 border-dashed border-[var(--accent-primary)] m-4">
+                  <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 animate-bounce"
+                    style={{ background: 'var(--gradient-primary)' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 text-white">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 4.5 4.5 0 018.774-1.41 4.5 4.5 0 014.5 4.5 4.5 4.5 0 01-1.41 8.775 4.5 4.5 0 01-8.774 1.41 4.5 4.5 0 01-1.41-8.775z" />
+                    </svg>
                   </div>
-                  {selectedKBFiles.map((file) => (
-                    <FileItem
-                      key={file.id}
-                      file={file}
-                      onDelete={handleDeleteFile}
-                      onView={handleViewFile}
-                    />
-                  ))}
+                  <h3 className="text-lg font-semibold text-[var(--text)] mb-2">Drop files here</h3>
+                  <p className="text-sm text-[var(--text-secondary)]">Release to upload to {selectedKB.name}</p>
                 </div>
               )}
+
+              {/* Uploading Overlay */}
+              {isUploading && !isDragOver && (
+                <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[var(--surface)]/80 backdrop-blur-sm rounded-xl m-4">
+                  <div className="w-12 h-12 rounded-full border-4 border-[var(--accent-primary)]/30 border-t-[var(--accent-primary)] animate-spin mb-4" />
+                  <h3 className="text-sm font-semibold text-[var(--text)]">Uploading files...</h3>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">Please wait</p>
+                </div>
+              )}
+
+              {(() => {
+                const sources = selectedKB.config?.sources || []
+                const orphanFiles = selectedKBFiles.filter(f => !f.metadata?.source_id)
+                const hasNoContent = sources.length === 0 && orphanFiles.length === 0
+                const getSourceFiles = (sourceId) => selectedKBFiles.filter(f => f.metadata?.source_id === sourceId)
+                return hasNoContent ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center
+                                    bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-secondary)]/5
+                                    border border-[var(--glass-border)]">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-[var(--accent-primary)] opacity-60">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>No items yet</h3>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Add content through sources to use as context in chats
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {sources.length > 0 && (
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Sources ({sources.length})</h4>
+                        <SourcesPanel
+                          kb={selectedKB}
+                          kbFiles={selectedKBFiles}
+                          onSave={handleSaveSettings}
+                          onDeleteSource={handleDeleteSource}
+                          onRefresh={() => fetchKBDetails(selectedKB.id)}
+                          onEmbedSource={handleEmbedSource}
+                          isEmbedding={isEmbedding}
+                          onViewFile={handleViewFile}
+                          onDeleteFile={handleDeleteFileFromSource}
+                          onUploadFilesToSource={handleUploadFilesToSource}
+                        />
+                      </div>
+                    )}
+                    {orphanFiles.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>Standalone Files ({orphanFiles.length})</h4>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {orphanFiles.map((file) => (
+                            <FileCard
+                              key={file.id}
+                              file={file}
+                              onDelete={handleDeleteFile}
+                              onView={handleViewFile}
+                              onEmbed={handleEmbedFile}
+                              isEmbedding={isEmbedding}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           </>
         ) : (
@@ -1501,17 +3018,231 @@ const KnowledgeBase = ({ onRefresh }) => {
         )}
       </div>
 
+      {/* KB Chat Panel */}
+      {showKBChat && selectedKB && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--modal-backdrop)] backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) handleCloseKBChat() }}>
+          <div className="w-[1000px] h-[700px] rounded-2xl flex overflow-hidden animate-modal"
+            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--modal-shadow)' }}
+            onClick={(e) => e.stopPropagation()}>
+
+            {/* Session Sidebar */}
+            <div className="w-[220px] border-r flex flex-col" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+              <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <button
+                  onClick={createNewKbSession}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: 'var(--accent)', color: '#fff' }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  New Chat
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {(kbSessions || []).map(session => (
+                  <div
+                    key={session.id}
+                    className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-xs transition-all ${
+                      session.id === activeKbSessionId ? 'glass-card-strong border border-[var(--accent)]/30' : 'hover:bg-[var(--surface)]'
+                    }`}
+                    style={{ color: session.id === activeKbSessionId ? 'var(--text)' : 'var(--text-secondary)' }}
+                    onClick={() => switchToKbSession(session.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium">
+                        {session.title || session.preview || 'New Chat'}
+                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {session.message_count || 0} messages
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteKbSession(session.id) }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--danger)]/10 hover:text-[var(--danger)] transition-all"
+                      title="Delete session"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194.855-2.166 2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {(!kbSessions || kbSessions.length === 0) && (
+                  <div className="text-center py-6">
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No chat sessions yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col">
+              {/* Chat Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ background: selectedType.color + '20' }}>
+                    {React.cloneElement(selectedType.icon, { style: { color: selectedType.color } })}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-[var(--text)]">Chat with {selectedKB.name}</h3>
+                    <p className="text-[10px] text-[var(--text-tertiary)]">
+                      {selectedKB.config?.chat_model && selectedKB.config?.chat_model !== 'default'
+                        ? `Using ${selectedKB.config.chat_model} • Temp: ${selectedKB.config.temperature || '0.7'}`
+                        : 'RAG-powered conversation • Using default model'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {kbChatMessages.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleClearKBChat}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
+                        style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                        title="Clear chat history"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194.855-2.166 2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
+                        </svg>
+                        Clear
+                      </button>
+                      <button
+                        onClick={() => handleSaveEntireChatToKB()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
+                        style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                        title="Save entire chat to knowledge base"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Save Chat
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={handleCloseKBChat}
+                    className="p-2 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-tertiary)] transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: 'var(--bg)' }}>
+                {kbChatMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                      style={{ background: 'var(--gradient-primary)' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-white">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-[var(--text-secondary)]">Start a conversation using this knowledge base</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Ask questions about your documents</p>
+                  </div>
+                ) : (
+                  kbChatMessages.map((msg, idx) => (
+                    <div key={msg.id || idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm ${
+                        msg.role === 'user'
+                          ? 'user-bubble'
+                          : msg.role === 'error'
+                            ? 'bg-[var(--danger)]/10 border border-[var(--danger)]/30'
+                            : 'glass-card border border-[var(--glass-border)]'
+                      }`}>
+                        <div className="prose prose-invert max-w-none text-[var(--text)]">
+                          {msg.content || (isKBChatStreaming && idx === kbChatMessages.length - 1 ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </span>
+                          ) : null)}
+                        </div>
+
+                        {msg.role === 'assistant' && msg.content && !isKBChatStreaming && (
+                          <div className="mt-3 pt-2 border-t border-[var(--border)]/50 flex items-center justify-between">
+                            <span className="text-[10px] text-[var(--text-muted)]">
+                              {msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleTimeString() : ''}
+                            </span>
+                            <button
+                              onClick={() => handleSaveChatToKB(msg)}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-all hover:scale-105"
+                              style={{ 
+                                background: 'var(--surface)',
+                                color: 'var(--accent)',
+                                border: '1px solid var(--accent)',
+                              }}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                              </svg>
+                              Add to Knowledge Bases
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={kbChatEndRef} />
+              </div>
+
+              {/* Chat Input */}
+              <div className="px-4 py-4 border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <form onSubmit={handleKBChatSubmit} className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={kbChatInput}
+                    onChange={(e) => setKBChatInput(e.target.value)}
+                    placeholder="Ask about your documents..."
+                    disabled={isKBChatStreaming}
+                    className="flex-1 px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                    style={{
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!kbChatInput.trim() || isKBChatStreaming}
+                    className="p-3 rounded-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: 'var(--surface)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--accent)',
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create KB Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50 animate-backdrop"
           style={{ backgroundColor: 'var(--modal-backdrop)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setShowCreateModal(false); setNewKBDir({ name: '', description: '', kb_type: 'notes' }) } }}>
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowCreateModal(false); setNewKBDir({ name: '', description: '', kb_type: 'knowledge' }) } }}>
           <div className="w-[480px] rounded-xl p-5 animate-modal"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--modal-shadow)' }}>
             <h3 className="text-base font-semibold mb-4" style={{ color: 'var(--text)' }}>Create Knowledge Base</h3>
             <div className="mb-4">
               <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Type</label>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {KB_TYPES.map(type => (
                   <button
                     key={type.id}
@@ -1559,7 +3290,7 @@ const KnowledgeBase = ({ onRefresh }) => {
             </div>
             <div className="flex justify-end gap-2 mt-5">
               <button
-                onClick={() => { setShowCreateModal(false); setNewKBDir({ name: '', description: '', kb_type: 'notes' }) }}
+                onClick={() => { setShowCreateModal(false); setNewKBDir({ name: '', description: '', kb_type: 'knowledge' }) }}
                 className="px-4 py-2 rounded-lg text-sm"
                 style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
               >
@@ -1577,102 +3308,165 @@ const KnowledgeBase = ({ onRefresh }) => {
         </div>
       )}
 
-      {/* Add Item Modal */}
+      {/* Add Source Modal */}
       {showAddModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50 animate-backdrop"
           style={{ backgroundColor: 'var(--modal-backdrop)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setShowAddModal(false); setNewItem({ name: '', content: '', url: '' }) } }}>
-          <div className="w-[500px] rounded-xl p-5 animate-modal"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowAddModal(false); setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}); setSourceAdded(false) } }}>
+          <div className="w-[560px] max-h-[85vh] rounded-xl overflow-hidden animate-modal"
             style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--modal-shadow)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Add to {selectedKB?.name}</h3>
-            </div>
+            
+            {/* Step 1: Pick Source Type */}
+            {addSourceStep === 'pick' && (
+              <>
+                <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div>
+                    <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Add Source to {selectedKB?.name}</h3>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Choose a source type to add data</p>
+                  </div>
+                  <button onClick={() => { setShowAddModal(false); setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}) }}
+                    className="p-1 rounded-md" style={{ color: 'var(--text-tertiary)' }}>
+                    <XIcon size={16} />
+                  </button>
+                </div>
 
-            <div className="space-y-4">
-              {selectedKB?.kb_type === 'files' && (
-                <div 
-                  className="relative group border-2 border-dashed rounded-xl p-8 transition-all hover:border-[var(--accent)] hover:bg-[var(--accent-subtle)]"
-                  style={{ borderColor: 'var(--border)', cursor: 'pointer' }}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.backgroundColor = 'var(--accent-subtle)' }}
-                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.backgroundColor = 'transparent' }}
-                  onDrop={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.backgroundColor = 'transparent'; handleFileChange({ target: { files: e.dataTransfer.files } }) }}
-                >
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept=".pdf,.txt,.md,.doc,.docx,.csv" 
-                    multiple 
-                    onChange={handleFileChange}
-                  />
-                  <div className="flex flex-col items-center justify-center text-center gap-2">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110"
-                      style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-6 h-6 ${isUploading ? 'animate-spin' : ''}`}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-                        {isUploading ? 'Uploading...' : 'Click or Drag Files'}
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                        PDF, TXT, MD, DOCX, CSV
-                      </p>
-                    </div>
+                <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 130px)' }}>
+
+                  {/* Source types grid */}
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    {Object.values(SOURCE_TYPES).map(st => (
+                      <button
+                        key={st.id}
+                        onClick={() => {
+                          setAddSourceType(st.id)
+                          setAddSourceConfig(DEFAULT_SOURCE_CONFIG[st.id] || {})
+                          setAddSourceStep('config')
+                        }}
+                        className="flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.02]"
+                        style={{
+                          backgroundColor: st.color + '08',
+                          border: '1px solid',
+                          borderColor: st.color + '30',
+                        }}
+                      >
+                        <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: st.color + '20', color: st.color }}>
+                          {st.icon}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{st.label}</div>
+                          <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{st.description}</div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
+              </>
+            )}
 
-              {selectedKB?.kb_type === 'files' && (
-                <div className="flex items-center gap-2 py-1">
-                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }}></div>
-                  <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-tertiary)' }}>or manual entry</span>
-                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }}></div>
+            {/* Step 2: Configure Source */}
+            {addSourceStep === 'config' && addSourceType && SOURCE_TYPES[addSourceType] && (
+              <>
+                <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => { setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}) }}
+                      className="p-1 rounded-md hover:bg-[var(--surface-hover)]" style={{ color: 'var(--text-tertiary)' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                      </svg>
+                    </button>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: SOURCE_TYPES[addSourceType].color + '20', color: SOURCE_TYPES[addSourceType].color }}>
+                      {SOURCE_TYPES[addSourceType].icon}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Add {SOURCE_TYPES[addSourceType].label} Source</h3>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{SOURCE_TYPES[addSourceType].description}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => { setShowAddModal(false); setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}) }}
+                    className="p-1 rounded-md" style={{ color: 'var(--text-tertiary)' }}>
+                    <XIcon size={16} />
+                  </button>
                 </div>
-              )}
 
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Name</label>
-                  <input
-                    type="text"
-                    value={newItem.name}
-                    onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg text-sm"
-                    style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                    placeholder="Item name"
-                  />
+                <div className="p-4 overflow-y-auto space-y-2" style={{ maxHeight: 'calc(85vh - 130px)' }}>
+                  {SOURCE_TYPES[addSourceType].fields.map(field => (
+                    <SettingRow
+                      key={field.key}
+                      field={field}
+                      value={addSourceConfig[field.key]}
+                      onChange={(val) => setAddSourceConfig({ ...addSourceConfig, [field.key]: val })}
+                    />
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Content</label>
-                  <textarea
-                    value={newItem.content}
-                    onChange={e => setNewItem({ ...newItem, content: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg text-sm resize-none"
-                    style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)', minHeight: '150px', fontFamily: 'monospace', fontSize: '0.85rem' }}
-                    placeholder="Content to add..."
-                  />
+
+                <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <button
+                    onClick={() => { setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}) }}
+                    className="px-4 py-2 rounded-lg text-sm"
+                    style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleAddSource}
+                    disabled={isUploading}
+                    className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                    style={{ backgroundColor: SOURCE_TYPES[addSourceType].color, color: '#fff' }}
+                  >
+                    {isUploading ? 'Uploading...' : `Add ${SOURCE_TYPES[addSourceType].label} Source`}
+                  </button>
                 </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={() => { setShowAddModal(false); setNewItem({ name: '', content: '', url: '' }) }}
-                className="px-4 py-2 rounded-lg text-sm"
-                style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddItem}
-                className="px-4 py-2 rounded-lg text-sm font-medium"
-                style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-              >
-                Add
-              </button>
-            </div>
+              </>
+            )}
+
+            {/* Step 3: Success */}
+            {addSourceStep === 'success' && sourceAdded && (
+              <>
+                <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div>
+                    <h3 className="text-base font-semibold" style={{ color: 'var(--text)' }}>Source Added Successfully</h3>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Your source has been added to {selectedKB?.name}</p>
+                  </div>
+                  <button onClick={() => { setShowAddModal(false); setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}); setSourceAdded(false) }}
+                    className="p-1 rounded-md" style={{ color: 'var(--text-tertiary)' }}>
+                    <XIcon size={16} />
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  <div className="flex items-center gap-3 p-4 rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: SOURCE_TYPES[sourceAdded.type]?.color + '20', color: SOURCE_TYPES[sourceAdded.type]?.color }}>
+                      {SOURCE_TYPES[sourceAdded.type]?.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>{sourceAdded.name}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{SOURCE_TYPES[sourceAdded.type]?.description}</div>
+                    </div>
+                    <div className="text-xs px-2 py-1 rounded-full" style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+                      Active
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 mt-6">
+                    <button
+                      onClick={() => { setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}); setSourceAdded(false) }}
+                      className="px-4 py-2 rounded-lg text-sm"
+                      style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
+                    >
+                      Add Another Source
+                    </button>
+                    <button
+                      onClick={() => { setShowAddModal(false); setAddSourceStep('pick'); setAddSourceType(null); setAddSourceConfig({}); setSourceAdded(false) }}
+                      className="px-4 py-2 rounded-lg text-sm font-medium"
+                      style={{ background: 'var(--gradient-primary)', color: '#fff' }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

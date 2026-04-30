@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-BASE_DIR = Path.home() / ".chatter" / "code_exec"
+BASE_DIR = Path.home() / ".cio-intelligence-hub" / "code_exec"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 _sessions: dict[str, dict] = {}

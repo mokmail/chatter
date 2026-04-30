@@ -1,4 +1,4 @@
-"""Configuration management for Chatter."""
+"""Configuration management for CIO Intelligence Hub."""
 import os
 import uuid
 from pathlib import Path
@@ -43,8 +43,14 @@ class Config(BaseModel):
     rag_hybrid_search: bool = True
     rag_reranking: bool = True
     rag_top_k: int = 10
+    web_search_enabled: bool = True
+    web_search_provider: Literal["duckduckgo", "serpapi", "searxng"] = "duckduckgo"
+    web_search_api_key: Optional[str] = None
+    web_search_result_count: int = 10
+    web_search_serpapi_base_url: Optional[str] = None
+    web_search_searxng_base_url: Optional[str] = None
 
-CONFIG_DIR = Path.home() / ".chatter"
+CONFIG_DIR = Path.home() / ".cio-intelligence-hub"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 

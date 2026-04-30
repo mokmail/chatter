@@ -16,7 +16,7 @@ const ShareModal = ({ isOpen, onClose, session, messages, shareTarget }) => {
   const handleCopyLink = () => {
     if (isSingleMessage) {
       const text = targetMessage.content.slice(0, 200) + (targetMessage.content.length > 200 ? '...' : '')
-      navigator.clipboard.writeText(`"${text}" - Shared from BEV Intelligence`)
+      navigator.clipboard.writeText(`"${text}" - Shared from CIO Intelligence Hub`)
     } else {
       navigator.clipboard.writeText(window.location.href)
     }
@@ -90,7 +90,7 @@ const ShareModal = ({ isOpen, onClose, session, messages, shareTarget }) => {
   const shareToTwitter = () => {
     const text = isSingleMessage
       ? encodeURIComponent(`"${targetMessage.content.slice(0, 150)}..."`)
-      : encodeURIComponent(`${chatTitle} - Shared from BEV Intelligence`)
+      : encodeURIComponent(`${chatTitle} - Shared from CIO Intelligence Hub`)
     window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank')
   }
 

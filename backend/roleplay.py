@@ -1,4 +1,4 @@
-"""Roleplay Engine for Chatter - Character and session management."""
+"""Roleplay Engine for CIO Intelligence Hub - Character and session management."""
 import json
 import uuid
 from dataclasses import dataclass, field, asdict

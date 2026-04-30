@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -9,6 +9,22 @@ import CodeBlock from './chat/CodeBlock'
 import StreamingCursor from './chat/StreamingCursor'
 import ThinkingBlock from './chat/ThinkingBlock'
 import MessageActions from './chat/MessageActions'
+
+const formatTimeAgo = (timestamp) => {
+  if (!timestamp) return ''
+  const now = Date.now() / 1000
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / 60)
+  const hours = Math.floor(diff / 3600)
+  const days = Math.floor(diff / 86400)
+
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  return new Date(timestamp * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 const codeComponent = ({ node, inline, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '')
@@ -26,9 +42,10 @@ const codeComponent = ({ node, inline, className, children, ...props }) => {
   }} {...props}>{children}</code>
 }
 
-export default function ChatMessage({ message, isStreaming, knowledgeBases = [], index = 0, totalMessages = 1, highlight = false, highlightQuery = null, onEdit, onCopy, onEvaluate, onBranch, onFork, onContinue, onRegenerate, onDelete, onShare, onSaveToKnowledge, editingMessage, editText, setEditText, onSaveEdit, onCancelEdit }) {
+export default function ChatMessage({ message, isStreaming, knowledgeBases = [], index = 0, totalMessages = 1, highlight = false, highlightQuery = null, onEdit, onCopy, onEvaluate, onBranch, onFork, onContinue, onRegenerate, onDelete, onShare, onSaveToKnowledge, editingMessage, editText, setEditText, onSaveEdit, onCancelEdit, currentModel }) {
   const isUser = message.role === 'user'
   const isAssistantStreaming = !isUser && isStreaming && message.content
+  const [isFolded, setIsFolded] = useState(false)
 
   const activeKBs = (message.knowledgeBases || []).map(id => {
     const kb = knowledgeBases.find(k => k.id === id)
@@ -39,6 +56,9 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
   const displayContent = message.content ? message.content.trim() : ''
 
   const isEditing = editingMessage === message.id
+  const isEmptyMessage = !message.content && message.role === 'assistant'
+
+  const shouldShowFoldToggle = !isUser && !isEditing && displayContent && displayContent.length > 500
 
   const highlightText = (text, query) => {
     if (!query || !text) return text
@@ -89,12 +109,43 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
         <div className={`flex flex-col gap-2.5 min-w-0 flex-1 ${isUser ? 'items-end' : 'items-start'}`}>
           {/* Header with enhanced styling */}
           <div className="flex items-center gap-2.5 px-1">
-            <span className={`
-              text-[11px] font-semibold uppercase tracking-wider
-              ${isUser ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]'}
-            `}>
-              {isUser ? 'You' : 'Assistant'}
+            {isUser ? (
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent-primary)]">You</span>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--text-tertiary)]">
+                  <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                  <line x1="4" x2="4" y1="22" y2="15"/>
+                </svg>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{currentModel || 'Assistant'}</span>
+              </>
+            )}
+            <span className="text-[10px] text-[var(--text-muted)]" title={message.timestamp ? new Date(message.timestamp).toLocaleString() : ''}>
+              {message.timestamp ? formatTimeAgo(message.timestamp) : ''}
             </span>
+            {shouldShowFoldToggle && (
+              <button
+                onClick={() => setIsFolded(!isFolded)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium transition-all duration-200 hover:bg-[var(--surface-hover)]"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                {isFolded ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                    Expand
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m18 15-6-6-6 6"/>
+                    </svg>
+                    Fold
+                  </>
+                )}
+              </button>
+            )}
             {activeKBs.length > 0 && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass-button text-[10px] text-[var(--text-secondary)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)] animate-breathe" />
@@ -105,7 +156,7 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
 
           {/* Enhanced Message Bubble */}
           <div className={`
-            w-full px-5 py-4 rounded-[var(--radius)] transition-all duration-300 relative overflow-hidden
+            w-full px-5 py-4 rounded-[var(--radius-sm)] transition-all duration-300 relative overflow-hidden
             ${isUser 
               ? 'user-bubble' 
               : 'glass-card border border-[var(--glass-border)]'
@@ -151,7 +202,31 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : isFolded ? (
+              <div className="relative">
+                <div className="prose prose-invert max-w-none relative z-10 line-clamp-3 opacity-80">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
+                    components={{ code: codeComponent }}
+                  >
+                    {displayContent}
+                  </ReactMarkdown>
+                </div>
+                <div className="mt-3 flex justify-center">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsFolded(false) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-200 hover:scale-105 active:scale-95 glass-button"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m18 15-6-6-6 6"/>
+                    </svg>
+                    Expand response
+                  </button>
+                </div>
+              </div>
+            ) : displayContent ? (
               <div className="prose prose-invert max-w-none relative z-10">
                 {highlight && highlightQuery ? (
                   <div className="whitespace-pre-wrap">{highlightText(displayContent, highlightQuery)}</div>
@@ -166,11 +241,60 @@ export default function ChatMessage({ message, isStreaming, knowledgeBases = [],
                 )}
                 {isAssistantStreaming && <StreamingCursor />}
               </div>
-            )}
+            ) : isAssistantStreaming ? (
+              <div className="prose prose-invert max-w-none relative z-10">
+                <StreamingCursor />
+              </div>
+            ) : null}
           </div>
 
+          {/* Sources Section */}
+          {!isUser && message.sources && message.sources.length > 0 && (
+            <div className="w-full px-4 py-3 rounded-[var(--radius-sm)] mt-1"
+              style={{ background: 'var(--surface)', border: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--accent-primary)]">
+                  <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>
+                </svg>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                  Sources ({message.sources.length})
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {message.sources.map((s, i) => (
+                  <a
+                    key={i}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 px-3 py-2 rounded-xl text-sm transition-all duration-200 hover:bg-[var(--surface-hover)] group/source no-underline"
+                  >
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 mt-0.5"
+                      style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-medium text-[13px] leading-tight truncate group-hover/source:text-[var(--accent-primary)] transition-colors"
+                        style={{ color: 'var(--text)' }}>
+                        {s.title}
+                      </div>
+                      <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        {new URL(s.url).hostname}
+                      </div>
+                      {s.snippet && (
+                        <div className="text-[11px] mt-1 line-clamp-2 leading-snug" style={{ color: 'var(--text-muted)' }}>
+                          {s.snippet}
+                        </div>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Enhanced Action Footer */}
-          {!isEditing && (
+          {!isEditing && !isEmptyMessage && (
             <div className={`
               opacity-0 group-hover:opacity-100 
               transition-all duration-300 ease-out

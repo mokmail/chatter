@@ -1,20 +1,24 @@
+<!-- Root HTML shell. Inline theme script runs BEFORE React mounts to prevent FOUC (flash of unstyled content). -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Inline SVG favicon - no network request needed -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d0d0f" />
-    <meta name="description" content="BEV Intelligence - AI Chat Interface" />
-    <title>BEV Intelligence</title>
+    <meta name="description" content="CIO Intelligence Hub - AI Chat Interface" />
+    <title>CIO Intelligence Hub</title>
     <style>
+      /* Prevent white flash before React renders by fading in #root */
       html[data-theme="light"] body { background-color: #ffffff; }
       html[data-theme="dark"] body, body { background-color: #0d0d0f; }
       #root { opacity: 0; animation: rootFadeIn 0.3s ease-out forwards; }
       @keyframes rootFadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
     <script>
-      (function(){var t=localStorage.getItem('chatter-theme');if(t==='light'||(!t&&matchMedia('(prefers-color-scheme:light)').matches)){document.documentElement.setAttribute('data-theme','light');document.querySelector('meta[name="theme-color"]').content='#ffffff'}})()
+      // Apply saved theme BEFORE first paint - reads localStorage synchronously
+      (function(){var t=localStorage.getItem('cio-intelligence-hub-theme');if(t==='light'||(!t&&matchMedia('(prefers-color-scheme:light)').matches)){document.documentElement.setAttribute('data-theme','light');document.querySelector('meta[name="theme-color"]').content='#ffffff'}})()
     </script>
   </head>
   <body>

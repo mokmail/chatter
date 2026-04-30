@@ -24,7 +24,7 @@ const MessageActions = ({ message, index, totalMessages, onEdit, onDelete, onCop
   if (isSystem) return null
 
   return (
-    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 mt-1">
+    <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 mt-1 touch-visible">
       <Tooltip title={copied ? 'Copied!' : 'Copy message'}>
         <IconButton onClick={handleCopy} active={copied} activeColor="var(--success)">
           {copied ? ICONS.check : ICONS.copy}

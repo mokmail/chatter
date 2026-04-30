@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../hooks/useTheme'
 
-const Header = ({ onClearHistory, title, models = [], currentModel, currentProviderId, onModelSelect, isRoleplayActive, roleplayCharacter, onRoleplayClick }) => {
+const Header = ({ title, models = [], currentModel, currentProviderId, onModelSelect, isRoleplayActive, roleplayCharacter, onRoleplayClick }) => {
   const { theme, toggleTheme } = useTheme()
   const [showModels, setShowModels] = useState(false)
   const dropdownRef = useRef(null)
@@ -96,29 +96,12 @@ const Header = ({ onClearHistory, title, models = [], currentModel, currentProvi
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2">
-        {/* New Chat Button - Premium Gradient */}
-        <button
-          onClick={onClearHistory}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs transition-all duration-200 hover:scale-105 active:scale-95 glow-accent-sm group"
-          style={{ background: 'var(--gradient-primary)', color: 'white' }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-90">
-            <path d="M12 5v14"/><path d="M5 12h14"/>
-          </svg>
-          New Chat
-        </button>
-
-        {/* Divider */}
-        <div className="h-6 w-px bg-[var(--border)] mx-1" />
-
-        {/* Theme Toggle */}
-        <button 
-          onClick={toggleTheme}
-          className="p-2.5 rounded-xl glass-button transition-all duration-300"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
+      {/* Theme Toggle */}
+      <button 
+        onClick={toggleTheme}
+        className="p-2.5 rounded-xl glass-button transition-all duration-300"
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
           {theme === 'dark' ? (
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-[var(--accent-cyan)]">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
@@ -129,19 +112,6 @@ const Header = ({ onClearHistory, title, models = [], currentModel, currentProvi
             </svg>
           )}
         </button>
-
-        {/* Edit/Settings Button */}
-        <button 
-          onClick={onClearHistory}
-          className="p-2.5 rounded-xl glass-button transition-all duration-300 tooltip"
-          title="Clear history"
-          data-tooltip="Clear history"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-          </svg>
-        </button>
-      </div>
     </header>
   )
 }

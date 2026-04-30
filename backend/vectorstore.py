@@ -15,7 +15,7 @@ import numpy as np
 
 from config import get_config
 
-STORAGE_PATH = Path.home() / ".chatter" / "chroma"
+STORAGE_PATH = Path.home() / ".cio-intelligence-hub" / "chroma"
 STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 _chroma_client = chromadb.PersistentClient(
@@ -216,6 +216,20 @@ def _get_bm25_index(kb_id: str) -> BM25Okapi | None:
     bm25 = BM25Okapi(tokenized_docs)
     _bm25_cache[kb_id] = bm25
     return bm25
+
+
+def delete_source_chunks(kb_id: str, source_id: str):
+    """Delete all chunks belonging to a source from the vector store."""
+    try:
+        collection = _chroma_client.get_or_create_collection(name=f"kb_{kb_id}")
+        results = collection.get(where={"source_id": source_id})
+        if results and results.get("ids"):
+            collection.delete(ids=results["ids"])
+        if kb_id in _bm25_cache:
+            del _bm25_cache[kb_id]
+        return len(results.get("ids", []))
+    except Exception:
+        return 0
 
 
 def delete_vectorstore(kb_id: str):

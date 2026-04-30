@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react'
-import logo from '../assets/Bundesamt-Eich-und-Vermessungswesen_Logo_srgb.png'
+import flagLogo from '../assets/Flag_Solo-01.svg'
 import {
   ChatIcon,
   KnowledgeIcon,
@@ -39,6 +39,7 @@ const Sidebar = ({
   onExportSession,
   onUpdateSession,
   onSearchClick,
+  onClearHistory,
   collapsed,
   onToggleCollapse,
 }) => {
@@ -51,7 +52,7 @@ const Sidebar = ({
   const [editingTitle, setEditingTitle] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem('bev-sidebar-width')
+    const saved = localStorage.getItem('cio-intelligence-hub-sidebar-width')
     return saved ? parseInt(saved, 10) : 260
   })
   const [isResizing, setIsResizing] = useState(false)
@@ -76,7 +77,7 @@ const Sidebar = ({
 
   const stopResizing = useCallback(() => {
     setIsResizing(false)
-    localStorage.setItem('bev-sidebar-width', sidebarWidth.toString())
+    localStorage.setItem('cio-intelligence-hub-sidebar-width', sidebarWidth.toString())
   }, [sidebarWidth])
 
   const resize = useCallback((e) => {
@@ -335,30 +336,27 @@ const Sidebar = ({
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Brand Section */}
-      <div className={`px-4 pt-5 pb-4 shrink-0 border-b border-[var(--glass-border)] ${collapsed && !isMobile ? 'items-center' : ''}`}>
-        <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
-            <div className={`flex items-center justify-center rounded-xl bg-gradient-to-br from-[var(--accent-primary)]/20 to-[var(--accent-secondary)]/10 border border-[var(--glass-border)] transition-all duration-300 ${collapsed && !isMobile ? 'h-10 w-10' : 'h-12 w-12'}`}>
-              <img 
-                src={logo} 
-                alt="Logo" 
-                className={`object-contain transition-all duration-300 ${collapsed && !isMobile ? 'h-7 w-7' : 'h-8 w-8'}`} 
-              />
+      <div className={`px-4 pt-5 pb-4 shrink-0 border-b border-[var(--glass-border)] flex flex-col ${collapsed && !isMobile ? 'items-center' : ''}`}>
+        <div className={`flex ${collapsed && !isMobile ? 'flex-col items-center' : 'items-start justify-between w-full'}`}>
+          <div className={`flex flex-col items-center ${collapsed && !isMobile ? '' : 'gap-1'}`}>
+            <div className="relative shrink-0">
+                <img 
+                  src={flagLogo} 
+                  alt="Logo" 
+                  className={`object-contain transition-all duration-300 ${collapsed && !isMobile ? 'h-9 w-9' : 'h-14 w-14'}`} 
+                />
             </div>
-            {!collapsed && (
-              <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-[var(--accent-primary)] animate-breathe shadow-lg shadow-[var(--accent-primary)]/50" />
+            {!collapsed && !isMobile && (
+              <div className="flex flex-col items-center mt-1">
+                <div className="text-sm font-bold tracking-tight text-[var(--text)] truncate">CIO Intelligence Hub</div>
+                <div className="text-[10px] text-[var(--text-muted)] font-medium">AI Assistant</div>
+              </div>
             )}
           </div>
-          {!collapsed && !isMobile && (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold tracking-tight text-[var(--text)] truncate">BEV Intelligence</div>
-              <div className="text-[10px] text-[var(--text-muted)] font-medium">AI Assistant</div>
-            </div>
-          )}
           {!isMobile && (
             <button
               onClick={onToggleCollapse}
-              className="ml-auto p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--text)] transition-all duration-200"
+              className="p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--text)] transition-all duration-200 shrink-0"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -373,7 +371,7 @@ const Sidebar = ({
           {isMobile && (
             <button 
               onClick={() => setIsOpen(false)} 
-              className="ml-auto p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--text)]"
+              className="p-2 rounded-xl glass-button text-[var(--text-secondary)] hover:text-[var(--text)]"
             >
               <CloseIcon size={18} />
             </button>
@@ -395,6 +393,18 @@ const Sidebar = ({
           <div className="space-y-4">
             {/* Active History */}
             <div className="space-y-1">
+              {/* New Chat Button */}
+              <button
+                onClick={onClearHistory}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-xs transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] group"
+                style={{ background: 'var(--surface)', color: 'var(--accent)', border: '1px solid var(--accent)' }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-90">
+                  <path d="M12 5v14"/><path d="M5 12h14"/>
+                </svg>
+                New Chat
+              </button>
+
               <div className="flex items-center justify-between px-3 mb-2 group/header">
                 <button
                   onClick={() => setShowHistory(!showHistory)}

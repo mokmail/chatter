@@ -1,4 +1,4 @@
-# Chatter
+# CIO Intelligence Hub
 
 An Open WebUI-inspired AI chat application with Ollama and OpenAI-compatible API support.
 
@@ -78,7 +78,7 @@ Access settings via the gear icon to configure:
 ## Project Structure
 
 ```
-chatter/
+cio-intelligence-hub/
 ├── backend/
 │   ├── main.py          # FastAPI app
 │   ├── config.py        # Configuration management

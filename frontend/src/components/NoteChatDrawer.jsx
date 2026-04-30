@@ -279,6 +279,8 @@ export default function NoteChatDrawer({ isOpen, note, onClose, onResponseAction
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isVisible, setIsVisible] = useState(false)
+  const [isAnimatingOut, setIsAnimatingOut] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -297,10 +299,21 @@ export default function NoteChatDrawer({ isOpen, note, onClose, onResponseAction
 
   useEffect(() => {
     if (isOpen) {
+      setIsVisible(true)
+      setIsAnimatingOut(false)
       setTimeout(() => inputRef.current?.focus(), 300)
       if (note?.id) loadChatHistory()
     }
   }, [isOpen, note?.id])
+
+  const handleClose = () => {
+    setIsAnimatingOut(true)
+    setTimeout(() => {
+      setIsVisible(false)
+      setIsAnimatingOut(false)
+      onClose()
+    }, 300)
+  }
 
   const loadChatHistory = async () => {
     if (!note?.id) return
@@ -388,17 +401,21 @@ export default function NoteChatDrawer({ isOpen, note, onClose, onResponseAction
 
   return (
     <>
-      {isOpen && (
+      {isVisible && (
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/40 transition-all duration-500 animate-fade-in"
-            onClick={onClose}
+            className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${
+              isAnimatingOut ? 'opacity-0' : 'opacity-100'
+            }`}
+            onClick={handleClose}
           />
 
           {/* Drawer */}
           <div
-            className="fixed right-0 top-0 h-[100dvh] w-[450px] z-50 flex flex-col shadow-2xl animate-slide-in glass-card-strong border-l border-[var(--glass-border)]"
+            className={`fixed right-0 top-0 h-[100dvh] w-[450px] z-50 flex flex-col shadow-2xl glass-card-strong border-l border-[var(--glass-border)] transition-transform duration-300 ease-out ${
+              isAnimatingOut ? 'translate-x-full' : 'translate-x-0'
+            }`}
           >
             {/* Header */}
             <div
@@ -426,7 +443,7 @@ export default function NoteChatDrawer({ isOpen, note, onClose, onResponseAction
                   </button>
                 )}
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="p-2 rounded-xl glass-button text-[var(--text-muted)] hover:text-[var(--text)] transition-all"
                 >
                   <CloseIcon size={20} />
@@ -558,7 +575,7 @@ export default function NoteChatDrawer({ isOpen, note, onClose, onResponseAction
                 </div>
               </div>
               <p className="mt-3 text-[9px] text-center font-bold text-[var(--text-muted)] uppercase tracking-widest opacity-50">
-                Powered by Chatter Intelligence v4.0
+                Powered by CIO Intelligence Hub v4.0
               </p>
             </div>
           </div>

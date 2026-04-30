@@ -1,8 +1,8 @@
-# Chatter — Open WebUI-Inspired Chat Application
+# CIO Intelligence Hub — Open WebUI-Inspired Chat Application
 
 ## 1. Project Overview
 
-- **Name**: Chatter
+- **Name**: CIO Intelligence Hub
 - **Type**: Full-stack web application (chat interface with RAG capabilities)
 - **Summary**: A self-hosted AI chat interface supporting Ollama and OpenAI-compatible APIs with Knowledge Base (RAG), Markdown rendering, chat history, dynamic sidebar, and dark mode.
 - **Target users**: Developers and users running local LLMs via Ollama or connecting to OpenAI-compatible APIs.
@@ -158,7 +158,7 @@ The Roleplay Engine enables immersive character-based conversations with the AI.
 ## 5. Frontend Design
 
 ### Layout
-- **Header**: App name "Chatter", settings gear icon, theme toggle
+- **Header**: App name "CIO Intelligence Hub", settings gear icon, theme toggle
 - **Sidebar**: Dynamic page navigation (Chat, Knowledge Base, Info)
 - **Main Content**: Page-specific content area
 
@@ -175,7 +175,7 @@ The Roleplay Engine enables immersive character-based conversations with the AI.
 ## 6. File Structure
 
 ```
-chatter/
+cio-intelligence-hub/
 ├── backend/
 │   ├── main.py              # FastAPI app + routes
 │   ├── config.py            # Configuration management

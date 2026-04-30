@@ -2,7 +2,7 @@
 
 ## Context
 
-Open WebUI provides an intelligent follow-up prompt system that generates contextual follow-up questions after each AI response. This helps users explore topics further without manually typing new prompts. We need to implement this feature in Chatter.
+Open WebUI provides an intelligent follow-up prompt system that generates contextual follow-up questions after each AI response. This helps users explore topics further without manually typing new prompts. We need to implement this feature in CIO Intelligence Hub.
 
 ## Goals
 

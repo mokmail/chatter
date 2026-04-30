@@ -62,6 +62,7 @@ async def _stream_ollama(
                         data = json.loads(line)
                         if "message" in data:
                             content = data["message"].get("content", "")
+                            print(f"OLLAMA_CHUNK: {content!r}", flush=True)
                             if content:
                                 yield content
                     except json.JSONDecodeError:
