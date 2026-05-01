@@ -209,6 +209,34 @@ def set_graph_status(kb_id: str, status: str, error: str | None = None):
     idx_path.write_text(json.dumps(data, indent=2))
 
 
+def _progress_path(kb_id: str) -> Path:
+    return _kb_graph_dir(kb_id) / "progress.json"
+
+
+def set_graph_progress(kb_id: str, current: int, total: int, phase: str, message: str = ""):
+    """Write build progress for frontend polling."""
+    progress = {
+        "current": current,
+        "total": total,
+        "phase": phase,
+        "message": message,
+        "timestamp": __import__("time").time(),
+    }
+    _kb_graph_dir(kb_id).mkdir(parents=True, exist_ok=True)
+    _progress_path(kb_id).write_text(json.dumps(progress, indent=2))
+
+
+def get_graph_progress(kb_id: str) -> dict:
+    """Read current build progress. Returns empty dict if none."""
+    path = _progress_path(kb_id)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
 def _build_extraction_prompt(schema: dict | None = None) -> str:
     """Build extraction prompt with optional graph schema."""
     entity_types = ", ".join(schema.get("entity_types", DEFAULT_ENTITY_TYPES) if schema else DEFAULT_ENTITY_TYPES)
@@ -312,11 +340,16 @@ async def build_graph_for_kb(
         all_entities: dict[str, dict] = {}  # normalized_name -> entity data
         all_relationships: list[dict] = []
         total = len(chunks)
+        num_batches = (total + batch_size - 1) // batch_size
 
-        for batch_start in range(0, total, batch_size):
+        set_graph_progress(kb_id, 0, num_batches + 3, "extraction", "Starting entity extraction...")
+
+        for batch_idx, batch_start in enumerate(range(0, total, batch_size)):
             batch_end = min(batch_start + batch_size, total)
             batch = chunks[batch_start:batch_end]
-            print(f"[GraphRAG] Processing batch {batch_start + 1}-{batch_end} of {total} chunks...")
+            msg = f"Extracting entities from batch {batch_idx + 1} of {num_batches} ({batch_start + 1}-{batch_end} chunks)..."
+            print(f"[GraphRAG] {msg}")
+            set_graph_progress(kb_id, batch_idx, num_batches + 3, "extraction", msg)
 
             entities, relationships = await extract_entities_and_relationships_batch(
                 batch, model=extraction_model, provider_id=extraction_provider, schema=schema
@@ -333,7 +366,6 @@ async def build_graph_for_kb(
                         "description": e.get("description", ""),
                         "source_chunks": [],
                     }
-                # Collect source chunk metadata for this batch
                 all_entities[norm]["source_chunks"].append({"batch": f"{batch_start + 1}-{batch_end}"})
 
             for r in relationships:
@@ -349,14 +381,16 @@ async def build_graph_for_kb(
                     "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}"}],
                 })
 
-            # Small delay to avoid overwhelming the LLM provider
             await asyncio.sleep(0.2)
 
         if not all_entities:
             set_graph_status(kb_id, "error", error="No entities extracted from chunks")
+            set_graph_progress(kb_id, 0, 1, "error", "No entities extracted from chunks")
             return {"status": "error", "entities": 0, "relationships": 0, "communities": 0}
 
-        print(f"[GraphRAG] Extracted {len(all_entities)} entities, {len(all_relationships)} relationships. Building graph...")
+        msg = f"Extracted {len(all_entities)} entities, {len(all_relationships)} relationships. Building graph..."
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, num_batches, num_batches + 3, "building", msg)
 
         # 2. Build NetworkX graph
         graph = nx.MultiDiGraph()
@@ -380,7 +414,9 @@ async def build_graph_for_kb(
                 )
 
         # 3. Community detection
-        print(f"[GraphRAG] Running community detection on {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges...")
+        msg = f"Running community detection on {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges..."
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, num_batches + 1, num_batches + 3, "community_detection", msg)
         try:
             # Try python-louvain first
             try:
@@ -397,11 +433,18 @@ async def build_graph_for_kb(
             print(f"Community detection error: {e}")
             communities = {0: set(graph.nodes())}
 
-        print(f"[GraphRAG] Found {len(communities)} communities. Summarizing...")
+        msg = f"Found {len(communities)} communities. Summarizing..."
+        print(f"[GraphRAG] {msg}")
 
         # 4. Summarize communities
         community_summaries = []
-        for comm_id, nodes in communities.items():
+        total_communities = len(communities)
+        for comm_idx, (comm_id, nodes) in enumerate(communities.items()):
+            progress_val = num_batches + 1 + (comm_idx / max(total_communities, 1))
+            msg = f"Summarizing community {comm_idx + 1} of {total_communities} ({len(nodes)} entities)..."
+            print(f"[GraphRAG] {msg}")
+            set_graph_progress(kb_id, int(progress_val), num_batches + 3, "summarization", msg)
+
             comm_entities = []
             comm_relationships = []
             for node in nodes:
@@ -443,7 +486,9 @@ async def build_graph_for_kb(
                 "entity_count": len(nodes),
             })
 
-        print(f"[GraphRAG] Summarized {len(community_summaries)} communities. Persisting...")
+        msg = f"Summarized {len(community_summaries)} communities. Saving graph..."
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, num_batches + 2, num_batches + 3, "persisting", msg)
 
         # 5. Persist
         graph_dir = _kb_graph_dir(kb_id)
@@ -488,6 +533,10 @@ async def build_graph_for_kb(
         # Optionally save to Neo4j
         _try_save_to_neo4j(kb_id, graph, index, community_summaries)
 
+        msg = f"Graph ready! {len(all_entities)} entities, {len(all_relationships)} relationships, {len(community_summaries)} communities."
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, num_batches + 3, num_batches + 3, "ready", msg)
+
         return {
             "status": "ready",
             "entities": len(all_entities),
@@ -495,10 +544,12 @@ async def build_graph_for_kb(
             "communities": len(community_summaries),
         }
     except Exception as e:
-        print(f"Graph build failed for {kb_id}: {e}")
+        err_msg = f"Graph build failed: {e}"
+        print(f"[GraphRAG] {err_msg}")
         import traceback
         traceback.print_exc()
         set_graph_status(kb_id, "error", error=str(e))
+        set_graph_progress(kb_id, 0, 1, "error", err_msg)
         return {"status": "error", "entities": 0, "relationships": 0, "communities": 0, "error": str(e)}
 
 

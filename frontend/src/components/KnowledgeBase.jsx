@@ -888,6 +888,9 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
   const [hasChanges, setHasChanges] = useState(false)
   const [isBuildingGraph, setIsBuildingGraph] = useState(false)
   const [graphBuildError, setGraphBuildError] = useState(null)
+  const [buildProgress, setBuildProgress] = useState(null)
+  const [buildLogs, setBuildLogs] = useState([])
+  const progressIntervalRef = useRef(null)
 
   const modelOptions = ['default', ...(models || []).map(m => m.id || m.name)]
 
@@ -906,6 +909,12 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
     })
     setHasChanges(false)
     setGraphBuildError(null)
+    setBuildProgress(null)
+    setBuildLogs([])
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current)
+      progressIntervalRef.current = null
+    }
   }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap, kb.graph_status])
 
   const handleChange = (key, value) => {
@@ -929,9 +938,24 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
     setHasChanges(false)
   }
 
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
+    }
+  }, [])
+
   const handleBuildGraph = async (force = false) => {
     setIsBuildingGraph(true)
     setGraphBuildError(null)
+    setBuildProgress(null)
+    setBuildLogs([])
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current)
+      progressIntervalRef.current = null
+    }
     try {
       const url = force
         ? `/api/knowledge/${kb.id}/build-graph?force=true`
@@ -940,12 +964,42 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
       const data = await resp.json()
       if (data.error) {
         setGraphBuildError(data.details ? `${data.error}\n${data.details}` : data.error)
-      } else if (onRefresh) {
-        onRefresh()
+        setIsBuildingGraph(false)
+        return
       }
+      // Start polling for progress
+      const poll = async () => {
+        try {
+          const r = await fetch(`/api/knowledge/${kb.id}/graph-progress`)
+          const d = await r.json()
+          const p = d.progress || {}
+          setBuildProgress(p)
+          if (p.message) {
+            setBuildLogs(prev => {
+              const last = prev[prev.length - 1]
+              if (last !== p.message) return [...prev, p.message]
+              return prev
+            })
+          }
+          if (d.status === 'ready' || d.status === 'error') {
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current)
+              progressIntervalRef.current = null
+            }
+            setIsBuildingGraph(false)
+            if (d.status === 'error' && p.message) {
+              setGraphBuildError(p.message)
+            }
+            if (onRefresh) onRefresh()
+          }
+        } catch (e) {
+          // polling error, ignore
+        }
+      }
+      poll()
+      progressIntervalRef.current = setInterval(poll, 2000)
     } catch (err) {
       setGraphBuildError(err.message)
-    } finally {
       setIsBuildingGraph(false)
     }
   }
@@ -1031,6 +1085,50 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
           )}
         </div>
       </div>
+
+      {(isBuildingGraph || buildProgress) && (
+        <div className="px-4 pb-2 space-y-2">
+          <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--surface)' }}>
+              <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                {buildProgress?.phase === 'ready' ? 'Build Complete' :
+                 buildProgress?.phase === 'error' ? 'Build Failed' :
+                 buildProgress?.phase ? `Building: ${buildProgress.phase}` :
+                 'Starting build...'}
+              </span>
+              <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                {buildProgress?.total ? `${Math.round((buildProgress.current / buildProgress.total) * 100)}%` : ''}
+              </span>
+            </div>
+            <div className="px-3 pb-2">
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-tertiary)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{
+                    width: buildProgress?.total ? `${(buildProgress.current / buildProgress.total) * 100}%` : '0%',
+                    background: buildProgress?.phase === 'error' ? '#ef4444' :
+                                buildProgress?.phase === 'ready' ? '#10b981' : 'var(--accent)',
+                  }}
+                />
+              </div>
+            </div>
+            {buildProgress?.message && (
+              <div className="px-3 pb-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {buildProgress.message}
+              </div>
+            )}
+            {buildLogs.length > 0 && (
+              <div className="border-t px-3 py-2 space-y-1 max-h-32 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                {buildLogs.slice(-5).map((log, i) => (
+                  <div key={i} className="text-[10px] leading-tight" style={{ color: 'var(--text-muted)' }}>
+                    • {log}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {graphBuildError && (
         <div className="px-4 pb-2">

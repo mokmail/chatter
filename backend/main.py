@@ -1029,33 +1029,42 @@ async def build_kb_graph(kb_id: str, force: bool = False):
             "files": files_info
         }, status_code=400)
     
-    # Run graph build asynchronously
-    try:
-        schema_raw = kb.config.get("graph_schema")
-        schema = None
-        if schema_raw and isinstance(schema_raw, str):
-            try:
-                schema = json.loads(schema_raw)
-            except Exception:
-                schema = None
-        elif isinstance(schema_raw, dict):
-            schema = schema_raw
-        result = await build_graph_for_kb(
-            kb_id,
-            chunks,
-            model=kb.config.get("extraction_model"),
-            provider_id=kb.config.get("embeddingProvider"),
-            schema=schema,
-        )
-        return {
-            "status": result.get("status", "ready"),
-            "entities": result.get("entities", 0),
-            "relationships": result.get("relationships", 0),
-            "communities": result.get("communities", 0),
-        }
-    except Exception as e:
-        set_graph_status(kb_id, "error", error=str(e))
-        return JSONResponse({"error": str(e)}, status_code=500)
+    # Resolve schema
+    schema_raw = kb.config.get("graph_schema")
+    schema = None
+    if schema_raw and isinstance(schema_raw, str):
+        try:
+            schema = json.loads(schema_raw)
+        except Exception:
+            schema = None
+    elif isinstance(schema_raw, dict):
+        schema = schema_raw
+
+    # Start build in background so the frontend can poll for progress
+    import asyncio
+    asyncio.create_task(build_graph_for_kb(
+        kb_id,
+        chunks,
+        model=kb.config.get("extraction_model"),
+        provider_id=kb.config.get("embeddingProvider"),
+        schema=schema,
+    ))
+    return {"status": "started", "message": "Graph build started"}
+
+
+@app.get("/api/knowledge/{kb_id}/graph-progress")
+async def get_kb_graph_progress(kb_id: str):
+    """Poll graph build progress."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    from graphrag_engine import get_graph_progress, get_graph_status
+    progress = get_graph_progress(kb_id)
+    status = get_graph_status(kb_id)
+    return {
+        "status": status,
+        "progress": progress,
+    }
 
 
 @app.get("/api/knowledge/{kb_id}/graph")
