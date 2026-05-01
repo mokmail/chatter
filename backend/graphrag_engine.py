@@ -356,6 +356,8 @@ async def build_graph_for_kb(
             set_graph_status(kb_id, "error", error="No entities extracted from chunks")
             return {"status": "error", "entities": 0, "relationships": 0, "communities": 0}
 
+        print(f"[GraphRAG] Extracted {len(all_entities)} entities, {len(all_relationships)} relationships. Building graph...")
+
         # 2. Build NetworkX graph
         graph = nx.MultiDiGraph()
         for norm, e in all_entities.items():
@@ -378,6 +380,7 @@ async def build_graph_for_kb(
                 )
 
         # 3. Community detection
+        print(f"[GraphRAG] Running community detection on {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges...")
         try:
             # Try python-louvain first
             try:
@@ -393,6 +396,8 @@ async def build_graph_for_kb(
         except Exception as e:
             print(f"Community detection error: {e}")
             communities = {0: set(graph.nodes())}
+
+        print(f"[GraphRAG] Found {len(communities)} communities. Summarizing...")
 
         # 4. Summarize communities
         community_summaries = []
@@ -424,6 +429,7 @@ async def build_graph_for_kb(
                     {"role": "system", "content": "You summarize knowledge graph communities."},
                     {"role": "user", "content": prompt},
                 ]
+                print(f"[GraphRAG] Summarizing community {comm_id} ({len(nodes)} entities)...")
                 try:
                     summary_text = await _call_llm(messages, model=extraction_model, provider_id=extraction_provider)
                 except Exception as e:
@@ -436,6 +442,8 @@ async def build_graph_for_kb(
                 "summary": summary_text.strip(),
                 "entity_count": len(nodes),
             })
+
+        print(f"[GraphRAG] Summarized {len(community_summaries)} communities. Persisting...")
 
         # 5. Persist
         graph_dir = _kb_graph_dir(kb_id)
@@ -450,11 +458,15 @@ async def build_graph_for_kb(
         summary_texts = [c["summary"] for c in community_summaries if c["summary"]]
         summary_embeddings = []
         if summary_texts:
+            print(f"[GraphRAG] Embedding {len(summary_texts)} community summaries...")
             try:
                 embeddings = ProviderEmbeddings(provider_id=extraction_provider, model=None)
                 summary_embeddings = embeddings.embed_documents(summary_texts)
+                print(f"[GraphRAG] Embedded {len(summary_embeddings)} summaries.")
             except Exception as e:
                 print(f"Community embedding error: {e}")
+        else:
+            print("[GraphRAG] No community summaries to embed.")
 
         index = {
             "status": "ready",
