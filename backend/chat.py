@@ -12,6 +12,7 @@ async def stream_chat(
     model: str | None = None,
     provider_id: str | None = None,
     reasoning_config: dict | None = None,
+    quiet: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion from the selected provider."""
     cfg = get_config()
@@ -33,13 +34,13 @@ async def stream_chat(
     model = model or cfg.active_model
 
     if provider.type == "ollama":
-        async for chunk in _stream_ollama(provider.base_url, model, messages, reasoning_config):
+        async for chunk in _stream_ollama(provider.base_url, model, messages, reasoning_config, quiet=quiet):
             yield chunk
     elif provider.type == "openai":
-        async for chunk in _stream_openai(provider.base_url, provider.api_key, model, messages):
+        async for chunk in _stream_openai(provider.base_url, provider.api_key, model, messages, quiet=quiet):
             yield chunk
     elif provider.type == "anthropic":
-        async for chunk in _stream_anthropic(provider.api_key, model, messages):
+        async for chunk in _stream_anthropic(provider.api_key, model, messages, quiet=quiet):
             yield chunk
 
 
@@ -48,6 +49,7 @@ async def _stream_ollama(
     model: str,
     messages: list[dict[str, str]],
     reasoning_config: dict | None = None,
+    quiet: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream from Ollama."""
     url = f"{base_url}/api/chat"
@@ -62,7 +64,8 @@ async def _stream_ollama(
                         data = json.loads(line)
                         if "message" in data:
                             content = data["message"].get("content", "")
-                            print(f"OLLAMA_CHUNK: {content!r}", flush=True)
+                            if not quiet:
+                                print(f"OLLAMA_CHUNK: {content!r}", flush=True)
                             if content:
                                 yield content
                     except json.JSONDecodeError:
@@ -74,6 +77,7 @@ async def _stream_openai(
     api_key: str,
     model: str,
     messages: list[dict[str, str]],
+    quiet: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream from OpenAI-compatible API."""
     url = f"{base_url}/chat/completions"
@@ -102,6 +106,7 @@ async def _stream_anthropic(
     api_key: str,
     model: str,
     messages: list[dict[str, str]],
+    quiet: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream from Anthropic API."""
     url = "https://api.anthropic.com/v1/messages"

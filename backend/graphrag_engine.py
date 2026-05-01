@@ -78,6 +78,33 @@ Rules:
 Text chunk:
 """
 
+BATCH_EXTRACTION_PROMPT_TEMPLATE = """You are a knowledge graph extraction engine.
+Given the following text chunks, extract all named entities and their relationships from ALL chunks combined.
+
+Use these entity types: {entity_types}
+Use these relationship types: {relation_types}
+
+Output ONLY a JSON object with this exact structure (no markdown, no explanations):
+{{
+  "entities": [
+    {{"name": "Entity Name", "type": "TYPE_FROM_LIST", "description": "Brief description"}}
+  ],
+  "relationships": [
+    {{"source": "Entity A", "relation": "RELATION_FROM_LIST", "target": "Entity B", "description": "Brief description"}}
+  ]
+}}
+
+Rules:
+- Use concise, canonical entity names (e.g., "OpenAI" not "openai inc.")
+- Each relationship must connect two entities that appear in the entities list.
+- Use ONLY the entity types and relationship types listed above.
+- If no entities or relationships are found, return empty arrays.
+- Do NOT wrap the JSON in markdown code blocks.
+
+Text chunks:
+{chunks}
+"""
+
 COMMUNITY_SUMMARY_PROMPT = """You are a knowledge graph summarizer.
 Given the following entities and relationships from a community subgraph, write a concise, information-dense paragraph that summarizes what this community is about.
 
@@ -147,7 +174,7 @@ def _safe_json_loads(text: str) -> dict:
 async def _call_llm(messages: list[dict], model: str | None = None, provider_id: str | None = None) -> str:
     """Non-streaming LLM call that collects chunks."""
     full = ""
-    async for chunk in stream_chat(messages, model=model, provider_id=provider_id):
+    async for chunk in stream_chat(messages, model=model, provider_id=provider_id, quiet=True):
         full += chunk
     return full
 
@@ -215,6 +242,43 @@ async def extract_entities_and_relationships(
         return [], []
 
 
+def _build_batch_extraction_prompt(schema: dict | None, chunks: list[tuple[str, dict[str, Any]]]) -> str:
+    """Build a prompt for batch extraction over multiple chunks."""
+    entity_types = ", ".join(schema.get("entity_types", DEFAULT_ENTITY_TYPES) if schema else DEFAULT_ENTITY_TYPES)
+    relation_types = ", ".join(schema.get("relation_types", DEFAULT_RELATION_TYPES) if schema else DEFAULT_RELATION_TYPES)
+    chunks_text = "\n\n---\n\n".join(
+        f"CHUNK {i + 1}:\n{text[:2000]}" for i, (text, _) in enumerate(chunks)
+    )
+    return BATCH_EXTRACTION_PROMPT_TEMPLATE.format(
+        entity_types=entity_types,
+        relation_types=relation_types,
+        chunks=chunks_text,
+    )
+
+
+async def extract_entities_and_relationships_batch(
+    chunks: list[tuple[str, dict[str, Any]]],
+    model: str | None = None,
+    provider_id: str | None = None,
+    schema: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Run LLM extraction over a batch of chunks."""
+    prompt = _build_batch_extraction_prompt(schema, chunks)
+    messages = [
+        {"role": "system", "content": "You extract structured knowledge graphs from text."},
+        {"role": "user", "content": prompt},
+    ]
+    try:
+        raw = await _call_llm(messages, model=model, provider_id=provider_id)
+        data = _safe_json_loads(raw)
+        entities = data.get("entities", [])
+        relationships = data.get("relationships", [])
+        return entities, relationships
+    except Exception as e:
+        print(f"GraphRAG batch extraction error: {e}")
+        return [], []
+
+
 async def build_graph_for_kb(
     kb_id: str,
     chunks: list[tuple[str, dict[str, Any]]],
@@ -241,16 +305,23 @@ async def build_graph_for_kb(
     cfg = get_config()
     extraction_model = model or cfg.active_model
     extraction_provider = provider_id or cfg.active_provider_id
+    batch_size = (schema.get("batch_size", 5) if schema else 5)
 
     try:
-        # 1. Extract entities and relationships from all chunks
+        # 1. Extract entities and relationships from all chunks in batches
         all_entities: dict[str, dict] = {}  # normalized_name -> entity data
         all_relationships: list[dict] = []
+        total = len(chunks)
 
-        for i, (text, meta) in enumerate(chunks):
-            entities, relationships = await extract_entities_and_relationships(
-                text, model=extraction_model, provider_id=extraction_provider, schema=schema
+        for batch_start in range(0, total, batch_size):
+            batch_end = min(batch_start + batch_size, total)
+            batch = chunks[batch_start:batch_end]
+            print(f"[GraphRAG] Processing batch {batch_start + 1}-{batch_end} of {total} chunks...")
+
+            entities, relationships = await extract_entities_and_relationships_batch(
+                batch, model=extraction_model, provider_id=extraction_provider, schema=schema
             )
+
             for e in entities:
                 norm = _normalize_entity_name(e.get("name", ""))
                 if not norm:
@@ -262,7 +333,8 @@ async def build_graph_for_kb(
                         "description": e.get("description", ""),
                         "source_chunks": [],
                     }
-                all_entities[norm]["source_chunks"].append(meta)
+                # Collect source chunk metadata for this batch
+                all_entities[norm]["source_chunks"].append({"batch": f"{batch_start + 1}-{batch_end}"})
 
             for r in relationships:
                 src = _normalize_entity_name(r.get("source", ""))
@@ -274,12 +346,11 @@ async def build_graph_for_kb(
                     "relation": r.get("relation", "related_to"),
                     "target": tgt,
                     "description": r.get("description", ""),
-                    "source_chunks": [meta],
+                    "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}"}],
                 })
 
             # Small delay to avoid overwhelming the LLM provider
-            if i % 5 == 0:
-                await asyncio.sleep(0.1)
+            await asyncio.sleep(0.2)
 
         if not all_entities:
             set_graph_status(kb_id, "error", error="No entities extracted from chunks")
