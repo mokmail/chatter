@@ -929,11 +929,14 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
     setHasChanges(false)
   }
 
-  const handleBuildGraph = async () => {
+  const handleBuildGraph = async (force = false) => {
     setIsBuildingGraph(true)
     setGraphBuildError(null)
     try {
-      const resp = await fetch(`/api/knowledge/${kb.id}/build-graph`, { method: 'POST' })
+      const url = force
+        ? `/api/knowledge/${kb.id}/build-graph?force=true`
+        : `/api/knowledge/${kb.id}/build-graph`
+      const resp = await fetch(url, { method: 'POST' })
       const data = await resp.json()
       if (data.error) {
         setGraphBuildError(data.details ? `${data.error}\n${data.details}` : data.error)
@@ -976,8 +979,8 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
                 </span>
               )}
               <button
-                onClick={handleBuildGraph}
-                disabled={isBuildingGraph || graphStatus === 'indexing'}
+                onClick={() => handleBuildGraph(graphStatus === 'indexing')}
+                disabled={isBuildingGraph}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: typeInfo.color + '20', color: typeInfo.color, border: `1px solid ${typeInfo.color}30` }}
               >
@@ -988,6 +991,20 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                     </svg>
                     Building...
+                  </>
+                ) : graphStatus === 'indexing' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                    Force Rebuild
+                  </>
+                ) : graphStatus === 'error' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                    Retry Build
                   </>
                 ) : (
                   <>

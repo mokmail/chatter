@@ -242,174 +242,181 @@ async def build_graph_for_kb(
     extraction_model = model or cfg.active_model
     extraction_provider = provider_id or cfg.active_provider_id
 
-    # 1. Extract entities and relationships from all chunks
-    all_entities: dict[str, dict] = {}  # normalized_name -> entity data
-    all_relationships: list[dict] = []
-
-    for i, (text, meta) in enumerate(chunks):
-        entities, relationships = await extract_entities_and_relationships(
-            text, model=extraction_model, provider_id=extraction_provider, schema=schema
-        )
-        for e in entities:
-            norm = _normalize_entity_name(e.get("name", ""))
-            if not norm:
-                continue
-            if norm not in all_entities:
-                all_entities[norm] = {
-                    "name": e.get("name", "").strip(),
-                    "type": e.get("type", "OTHER"),
-                    "description": e.get("description", ""),
-                    "source_chunks": [],
-                }
-            all_entities[norm]["source_chunks"].append(meta)
-
-        for r in relationships:
-            src = _normalize_entity_name(r.get("source", ""))
-            tgt = _normalize_entity_name(r.get("target", ""))
-            if not src or not tgt:
-                continue
-            all_relationships.append({
-                "source": src,
-                "relation": r.get("relation", "related_to"),
-                "target": tgt,
-                "description": r.get("description", ""),
-                "source_chunks": [meta],
-            })
-
-        # Small delay to avoid overwhelming the LLM provider
-        if i % 5 == 0:
-            await asyncio.sleep(0.1)
-
-    if not all_entities:
-        set_graph_status(kb_id, "error", error="No entities extracted from chunks")
-        return {"status": "error", "entities": 0, "relationships": 0, "communities": 0}
-
-    # 2. Build NetworkX graph
-    graph = nx.MultiDiGraph()
-    for norm, e in all_entities.items():
-        graph.add_node(
-            norm,
-            name=e["name"],
-            type=e["type"],
-            description=e["description"],
-            source_chunks=e["source_chunks"],
-        )
-
-    for r in all_relationships:
-        if r["source"] in all_entities and r["target"] in all_entities:
-            graph.add_edge(
-                r["source"],
-                r["target"],
-                relation=r["relation"],
-                description=r["description"],
-                source_chunks=r["source_chunks"],
-            )
-
-    # 3. Community detection
     try:
-        # Try python-louvain first
-        try:
-            import community as community_louvain
-            partition = community_louvain.best_partition(graph.to_undirected())
-            communities: dict[int, set] = {}
-            for node, comm_id in partition.items():
-                communities.setdefault(comm_id, set()).add(node)
-        except ImportError:
-            # Fallback to NetworkX greedy modularity
-            communities_iter = nx.algorithms.community.greedy_modularity_communities(graph.to_undirected())
-            communities = {i: set(c) for i, c in enumerate(communities_iter)}
-    except Exception as e:
-        print(f"Community detection error: {e}")
-        communities = {0: set(graph.nodes())}
+        # 1. Extract entities and relationships from all chunks
+        all_entities: dict[str, dict] = {}  # normalized_name -> entity data
+        all_relationships: list[dict] = []
 
-    # 4. Summarize communities
-    community_summaries = []
-    for comm_id, nodes in communities.items():
-        comm_entities = []
-        comm_relationships = []
-        for node in nodes:
-            nd = graph.nodes[node]
-            comm_entities.append({
-                "name": nd.get("name", node),
-                "type": nd.get("type", "OTHER"),
-                "description": nd.get("description", ""),
-            })
-        for u, v, d in graph.edges(data=True):
-            if u in nodes and v in nodes:
-                comm_relationships.append({
-                    "source": graph.nodes[u].get("name", u),
-                    "relation": d.get("relation", "related_to"),
-                    "target": graph.nodes[v].get("name", v),
-                    "description": d.get("description", ""),
+        for i, (text, meta) in enumerate(chunks):
+            entities, relationships = await extract_entities_and_relationships(
+                text, model=extraction_model, provider_id=extraction_provider, schema=schema
+            )
+            for e in entities:
+                norm = _normalize_entity_name(e.get("name", ""))
+                if not norm:
+                    continue
+                if norm not in all_entities:
+                    all_entities[norm] = {
+                        "name": e.get("name", "").strip(),
+                        "type": e.get("type", "OTHER"),
+                        "description": e.get("description", ""),
+                        "source_chunks": [],
+                    }
+                all_entities[norm]["source_chunks"].append(meta)
+
+            for r in relationships:
+                src = _normalize_entity_name(r.get("source", ""))
+                tgt = _normalize_entity_name(r.get("target", ""))
+                if not src or not tgt:
+                    continue
+                all_relationships.append({
+                    "source": src,
+                    "relation": r.get("relation", "related_to"),
+                    "target": tgt,
+                    "description": r.get("description", ""),
+                    "source_chunks": [meta],
                 })
 
-        summary_text = ""
-        if comm_entities:
-            prompt = COMMUNITY_SUMMARY_PROMPT + json.dumps(comm_entities, indent=2)
-            if comm_relationships:
-                prompt += "\n\nRelationships:\n" + json.dumps(comm_relationships, indent=2)
-            messages = [
-                {"role": "system", "content": "You summarize knowledge graph communities."},
-                {"role": "user", "content": prompt},
-            ]
-            try:
-                summary_text = await _call_llm(messages, model=extraction_model, provider_id=extraction_provider)
-            except Exception as e:
-                print(f"Community summarization error: {e}")
-                summary_text = ""
+            # Small delay to avoid overwhelming the LLM provider
+            if i % 5 == 0:
+                await asyncio.sleep(0.1)
 
-        community_summaries.append({
-            "id": comm_id,
-            "entities": list(nodes),
-            "summary": summary_text.strip(),
-            "entity_count": len(nodes),
-        })
+        if not all_entities:
+            set_graph_status(kb_id, "error", error="No entities extracted from chunks")
+            return {"status": "error", "entities": 0, "relationships": 0, "communities": 0}
 
-    # 5. Persist
-    graph_dir = _kb_graph_dir(kb_id)
-    graph_dir.mkdir(parents=True, exist_ok=True)
+        # 2. Build NetworkX graph
+        graph = nx.MultiDiGraph()
+        for norm, e in all_entities.items():
+            graph.add_node(
+                norm,
+                name=e["name"],
+                type=e["type"],
+                description=e["description"],
+                source_chunks=e["source_chunks"],
+            )
 
-    # Serialize graph for JSON (networkx node_link_data)
-    graph_data = nx.node_link_data(graph)
-    _graph_path(kb_id).write_text(json.dumps(graph_data, indent=2))
-    _communities_path(kb_id).write_text(json.dumps(community_summaries, indent=2))
+        for r in all_relationships:
+            if r["source"] in all_entities and r["target"] in all_entities:
+                graph.add_edge(
+                    r["source"],
+                    r["target"],
+                    relation=r["relation"],
+                    description=r["description"],
+                    source_chunks=r["source_chunks"],
+                )
 
-    # Build embeddings for community summaries (for global search)
-    summary_texts = [c["summary"] for c in community_summaries if c["summary"]]
-    summary_embeddings = []
-    if summary_texts:
+        # 3. Community detection
         try:
-            embeddings = ProviderEmbeddings(provider_id=extraction_provider, model=None)
-            summary_embeddings = embeddings.embed_documents(summary_texts)
+            # Try python-louvain first
+            try:
+                import community as community_louvain
+                partition = community_louvain.best_partition(graph.to_undirected())
+                communities: dict[int, set] = {}
+                for node, comm_id in partition.items():
+                    communities.setdefault(comm_id, set()).add(node)
+            except ImportError:
+                # Fallback to NetworkX greedy modularity
+                communities_iter = nx.algorithms.community.greedy_modularity_communities(graph.to_undirected())
+                communities = {i: set(c) for i, c in enumerate(communities_iter)}
         except Exception as e:
-            print(f"Community embedding error: {e}")
+            print(f"Community detection error: {e}")
+            communities = {0: set(graph.nodes())}
 
-    index = {
-        "status": "ready",
-        "entity_count": len(all_entities),
-        "relationship_count": len(all_relationships),
-        "community_count": len(community_summaries),
-        "community_summaries": [
-            {
-                "id": c["id"],
-                "summary": c["summary"],
-                "entity_count": c["entity_count"],
-                "embedding": summary_embeddings[i] if i < len(summary_embeddings) else None,
-            }
-            for i, c in enumerate(community_summaries)
-        ],
-    }
-    _index_path(kb_id).write_text(json.dumps(index, indent=2))
+        # 4. Summarize communities
+        community_summaries = []
+        for comm_id, nodes in communities.items():
+            comm_entities = []
+            comm_relationships = []
+            for node in nodes:
+                nd = graph.nodes[node]
+                comm_entities.append({
+                    "name": nd.get("name", node),
+                    "type": nd.get("type", "OTHER"),
+                    "description": nd.get("description", ""),
+                })
+            for u, v, d in graph.edges(data=True):
+                if u in nodes and v in nodes:
+                    comm_relationships.append({
+                        "source": graph.nodes[u].get("name", u),
+                        "relation": d.get("relation", "related_to"),
+                        "target": graph.nodes[v].get("name", v),
+                        "description": d.get("description", ""),
+                    })
 
-    # Optionally save to Neo4j
-    _try_save_to_neo4j(kb_id, graph, index, community_summaries)
+            summary_text = ""
+            if comm_entities:
+                prompt = COMMUNITY_SUMMARY_PROMPT + json.dumps(comm_entities, indent=2)
+                if comm_relationships:
+                    prompt += "\n\nRelationships:\n" + json.dumps(comm_relationships, indent=2)
+                messages = [
+                    {"role": "system", "content": "You summarize knowledge graph communities."},
+                    {"role": "user", "content": prompt},
+                ]
+                try:
+                    summary_text = await _call_llm(messages, model=extraction_model, provider_id=extraction_provider)
+                except Exception as e:
+                    print(f"Community summarization error: {e}")
+                    summary_text = ""
 
-    return {
-        "status": "ready",
-        "entities": len(all_entities),
-        "relationships": len(all_relationships),
-        "communities": len(community_summaries),
-    }
+            community_summaries.append({
+                "id": comm_id,
+                "entities": list(nodes),
+                "summary": summary_text.strip(),
+                "entity_count": len(nodes),
+            })
+
+        # 5. Persist
+        graph_dir = _kb_graph_dir(kb_id)
+        graph_dir.mkdir(parents=True, exist_ok=True)
+
+        # Serialize graph for JSON (networkx node_link_data)
+        graph_data = nx.node_link_data(graph)
+        _graph_path(kb_id).write_text(json.dumps(graph_data, indent=2))
+        _communities_path(kb_id).write_text(json.dumps(community_summaries, indent=2))
+
+        # Build embeddings for community summaries (for global search)
+        summary_texts = [c["summary"] for c in community_summaries if c["summary"]]
+        summary_embeddings = []
+        if summary_texts:
+            try:
+                embeddings = ProviderEmbeddings(provider_id=extraction_provider, model=None)
+                summary_embeddings = embeddings.embed_documents(summary_texts)
+            except Exception as e:
+                print(f"Community embedding error: {e}")
+
+        index = {
+            "status": "ready",
+            "entity_count": len(all_entities),
+            "relationship_count": len(all_relationships),
+            "community_count": len(community_summaries),
+            "community_summaries": [
+                {
+                    "id": c["id"],
+                    "summary": c["summary"],
+                    "entity_count": c["entity_count"],
+                    "embedding": summary_embeddings[i] if i < len(summary_embeddings) else None,
+                }
+                for i, c in enumerate(community_summaries)
+            ],
+        }
+        _index_path(kb_id).write_text(json.dumps(index, indent=2))
+
+        # Optionally save to Neo4j
+        _try_save_to_neo4j(kb_id, graph, index, community_summaries)
+
+        return {
+            "status": "ready",
+            "entities": len(all_entities),
+            "relationships": len(all_relationships),
+            "communities": len(community_summaries),
+        }
+    except Exception as e:
+        print(f"Graph build failed for {kb_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        set_graph_status(kb_id, "error", error=str(e))
+        return {"status": "error", "entities": 0, "relationships": 0, "communities": 0, "error": str(e)}
 
 
 async def retrieve_graph_context(
