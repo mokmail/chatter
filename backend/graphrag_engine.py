@@ -179,6 +179,69 @@ async def _call_llm(messages: list[dict], model: str | None = None, provider_id:
     return full
 
 
+async def _call_llm_with_timeout(messages: list[dict], model: str | None = None, provider_id: str | None = None, timeout: float = 60.0) -> str:
+    """Call LLM with a timeout to prevent hangs."""
+    try:
+        return await asyncio.wait_for(_call_llm(messages, model=model, provider_id=provider_id), timeout=timeout)
+    except asyncio.TimeoutError:
+        print(f"[GraphRAG] LLM call timed out after {timeout}s")
+        return ""
+
+
+async def _summarize_single_community(
+    comm_id: int,
+    nodes: set,
+    graph: Any,
+    extraction_model: str | None,
+    extraction_provider: str | None,
+) -> dict:
+    """Summarize a single community."""
+    comm_entities = []
+    comm_relationships = []
+    for node in nodes:
+        nd = graph.nodes[node]
+        comm_entities.append({
+            "name": nd.get("name", node),
+            "type": nd.get("type", "OTHER"),
+            "description": nd.get("description", ""),
+        })
+    for u, v, d in graph.edges(data=True):
+        if u in nodes and v in nodes:
+            comm_relationships.append({
+                "source": graph.nodes[u].get("name", u),
+                "relation": d.get("relation", "related_to"),
+                "target": graph.nodes[v].get("name", v),
+                "description": d.get("description", ""),
+            })
+
+    summary_text = ""
+    if comm_entities:
+        # Cap entities to avoid huge prompts
+        if len(comm_entities) > 30:
+            comm_entities = comm_entities[:30]
+        if len(comm_relationships) > 50:
+            comm_relationships = comm_relationships[:50]
+        prompt = COMMUNITY_SUMMARY_PROMPT + json.dumps(comm_entities, indent=2)
+        if comm_relationships:
+            prompt += "\n\nRelationships:\n" + json.dumps(comm_relationships, indent=2)
+        messages = [
+            {"role": "system", "content": "You summarize knowledge graph communities."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            summary_text = await _call_llm_with_timeout(messages, model=extraction_model, provider_id=extraction_provider, timeout=45.0)
+        except Exception as e:
+            print(f"[GraphRAG] Community {comm_id} summarization error: {e}")
+            summary_text = ""
+
+    return {
+        "id": comm_id,
+        "entities": list(nodes),
+        "summary": summary_text.strip(),
+        "entity_count": len(nodes),
+    }
+
+
 def get_graph_status(kb_id: str) -> str:
     """Return graph status: none | indexing | ready | error"""
     idx_path = _index_path(kb_id)
@@ -436,55 +499,42 @@ async def build_graph_for_kb(
         msg = f"Found {len(communities)} communities. Summarizing..."
         print(f"[GraphRAG] {msg}")
 
-        # 4. Summarize communities
+        # 4. Summarize communities in parallel
+        # Skip communities with fewer than 3 entities (not worth summarizing)
+        communities_to_summarize = {cid: nodes for cid, nodes in communities.items() if len(nodes) >= 3}
+        if not communities_to_summarize:
+            communities_to_summarize = communities  # fallback: summarize all if all are tiny
+
+        total_communities = len(communities_to_summarize)
+        msg = f"Found {len(communities)} communities. Summarizing {total_communities} in parallel..."
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, num_batches + 1, num_batches + 3, "summarization", msg)
+
+        # Build tasks for parallel execution
+        summary_tasks = []
+        for comm_id, nodes in communities_to_summarize.items():
+            summary_tasks.append(
+                _summarize_single_community(comm_id, nodes, graph, extraction_model, extraction_provider)
+            )
+
+        # Run all community summaries in parallel with a concurrency limit
+        MAX_PARALLEL = 5
         community_summaries = []
-        total_communities = len(communities)
-        for comm_idx, (comm_id, nodes) in enumerate(communities.items()):
-            progress_val = num_batches + 1 + (comm_idx / max(total_communities, 1))
-            msg = f"Summarizing community {comm_idx + 1} of {total_communities} ({len(nodes)} entities)..."
-            print(f"[GraphRAG] {msg}")
-            set_graph_progress(kb_id, int(progress_val), num_batches + 3, "summarization", msg)
-
-            comm_entities = []
-            comm_relationships = []
-            for node in nodes:
-                nd = graph.nodes[node]
-                comm_entities.append({
-                    "name": nd.get("name", node),
-                    "type": nd.get("type", "OTHER"),
-                    "description": nd.get("description", ""),
-                })
-            for u, v, d in graph.edges(data=True):
-                if u in nodes and v in nodes:
-                    comm_relationships.append({
-                        "source": graph.nodes[u].get("name", u),
-                        "relation": d.get("relation", "related_to"),
-                        "target": graph.nodes[v].get("name", v),
-                        "description": d.get("description", ""),
-                    })
-
-            summary_text = ""
-            if comm_entities:
-                prompt = COMMUNITY_SUMMARY_PROMPT + json.dumps(comm_entities, indent=2)
-                if comm_relationships:
-                    prompt += "\n\nRelationships:\n" + json.dumps(comm_relationships, indent=2)
-                messages = [
-                    {"role": "system", "content": "You summarize knowledge graph communities."},
-                    {"role": "user", "content": prompt},
-                ]
-                print(f"[GraphRAG] Summarizing community {comm_id} ({len(nodes)} entities)...")
-                try:
-                    summary_text = await _call_llm(messages, model=extraction_model, provider_id=extraction_provider)
-                except Exception as e:
-                    print(f"Community summarization error: {e}")
-                    summary_text = ""
-
-            community_summaries.append({
-                "id": comm_id,
-                "entities": list(nodes),
-                "summary": summary_text.strip(),
-                "entity_count": len(nodes),
-            })
+        for i in range(0, len(summary_tasks), MAX_PARALLEL):
+            batch_tasks = summary_tasks[i:i + MAX_PARALLEL]
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            for res in batch_results:
+                if isinstance(res, Exception):
+                    print(f"[GraphRAG] Community summary task failed: {res}")
+                    continue
+                community_summaries.append(res)
+            set_graph_progress(
+                kb_id,
+                num_batches + 1 + len(community_summaries) / max(total_communities, 1),
+                num_batches + 3,
+                "summarization",
+                f"Summarized {len(community_summaries)} of {total_communities} communities..."
+            )
 
         msg = f"Summarized {len(community_summaries)} communities. Saving graph..."
         print(f"[GraphRAG] {msg}")
@@ -506,8 +556,14 @@ async def build_graph_for_kb(
             print(f"[GraphRAG] Embedding {len(summary_texts)} community summaries...")
             try:
                 embeddings = ProviderEmbeddings(provider_id=extraction_provider, model=None)
-                summary_embeddings = embeddings.embed_documents(summary_texts)
+                # Use asyncio.wait_for to cap embedding time at 30s
+                summary_embeddings = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, embeddings.embed_documents, summary_texts),
+                    timeout=30.0
+                )
                 print(f"[GraphRAG] Embedded {len(summary_embeddings)} summaries.")
+            except asyncio.TimeoutError:
+                print("[GraphRAG] Community embedding timed out after 30s, skipping.")
             except Exception as e:
                 print(f"Community embedding error: {e}")
         else:
