@@ -31,6 +31,8 @@ import {
   RefreshIcon,
 } from './common/Icons'
 
+import GraphViewer from './GraphViewer'
+
 // Source Types for Knowledge Base
 const SOURCE_TYPES = {
   notes: { 
@@ -170,6 +172,47 @@ const KB_TYPES = [
       { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
       { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
       { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
+    ],
+  },
+  {
+    id: 'vectorstore',
+    label: 'Vector Store',
+    description: 'Classic vectorstore RAG with embeddings',
+    color: '#10b981',
+    icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C3.75 16.153 7.444 18 12 18s8.25-1.847 8.25-4.125v-3.75m0 0l-3.75-3.75m3.75 3.75l3.75-3.75m-16.5 3.75l3.75-3.75m-3.75 3.75l-3.75-3.75" /></svg>,
+    settings: [
+      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject All Content' },
+      { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
+      { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
+      { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk' },
+      { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
+      { key: 'embeddingModel', label: 'Embedding Model', type: 'text', default: '', help: 'Model for embeddings (empty = default)' },
+      { key: 'embeddingProvider', label: 'Embedding Provider', type: 'text', default: '', help: 'Provider ID for embeddings (empty = default)' },
+      { key: 'topK', label: 'Top K', type: 'number', default: 10, help: 'Number of chunks to retrieve' },
+      { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
+      { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
+      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
+      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
+    ],
+  },
+  {
+    id: 'graphrag',
+    label: 'GraphRAG',
+    description: 'Graph-based retrieval with entity/relationship extraction',
+    color: '#f97316',
+    icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" /></svg>,
+    settings: [
+      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Graph Search, Full=Inject All Content' },
+      { key: 'graph_mode', label: 'Graph Search Mode', type: 'select', options: ['local', 'global', 'hybrid', 'path', 'neighborhood'], default: 'local', help: 'Local=BFS entity traversal, Global=community summary ranking, Hybrid=vector+graph, Path=shortest path, Neighborhood=direct neighbors' },
+      { key: 'max_depth', label: 'Max BFS Depth', type: 'number', default: 2, help: 'How many hops to traverse in local/hybrid search (1-5)' },
+      { key: 'top_k', label: 'Top K', type: 'number', default: 5, help: 'Number of communities/entities to include' },
+      { key: 'extraction_model', label: 'Extraction Model', type: 'text', default: '', help: 'Model for entity extraction (empty = default)' },
+      { key: 'graph_schema', label: 'Graph Schema (JSON)', type: 'textarea', default: '', help: 'Optional: {\"entity_types\":[\"PERSON\",\"ORG\",...],\"relation_types\":[\"WORKS_FOR\",\"LOCATED_IN\",...]}' },
+      { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk for extraction' },
+      { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
+      { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
+      { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
+      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
     ],
   },
 ]
@@ -839,10 +882,12 @@ const SourceListItem = ({ source, sourceFiles = [], isSyncing, isEmbedding, onSy
   )
 }
 
-const SettingsPanel = ({ kb, onSave, models = [] }) => {
+const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onEmbedSource, isEmbedding }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const [config, setConfig] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
+  const [isBuildingGraph, setIsBuildingGraph] = useState(false)
+  const [graphBuildError, setGraphBuildError] = useState(null)
 
   const modelOptions = ['default', ...(models || []).map(m => m.id || m.name)]
 
@@ -860,7 +905,8 @@ const SettingsPanel = ({ kb, onSave, models = [] }) => {
       max_context_chunks: kb.config?.max_context_chunks ?? 10,
     })
     setHasChanges(false)
-  }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap])
+    setGraphBuildError(null)
+  }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap, kb.graph_status])
 
   const handleChange = (key, value) => {
     setConfig({ ...config, [key]: value })
@@ -883,6 +929,26 @@ const SettingsPanel = ({ kb, onSave, models = [] }) => {
     setHasChanges(false)
   }
 
+  const handleBuildGraph = async () => {
+    setIsBuildingGraph(true)
+    setGraphBuildError(null)
+    try {
+      const resp = await fetch(`/api/knowledge/${kb.id}/build-graph`, { method: 'POST' })
+      const data = await resp.json()
+      if (data.error) {
+        setGraphBuildError(data.details ? `${data.error}\n${data.details}` : data.error)
+      } else if (onRefresh) {
+        onRefresh()
+      }
+    } catch (err) {
+      setGraphBuildError(err.message)
+    } finally {
+      setIsBuildingGraph(false)
+    }
+  }
+
+  const graphStatus = kb.graph_status
+
   return (
     <div className="overflow-y-auto" style={{ backgroundColor: 'var(--bg-secondary)' }}>
       {/* Header */}
@@ -896,20 +962,66 @@ const SettingsPanel = ({ kb, onSave, models = [] }) => {
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{typeInfo.description}</p>
           </div>
         </div>
-        {hasChanges && (
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-            </svg>
-            Save Changes
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {kb.kb_type === 'graphrag' && (
+            <>
+              {graphStatus && (
+                <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${
+                  graphStatus === 'ready' ? 'bg-emerald-500/10 text-emerald-500' :
+                  graphStatus === 'indexing' ? 'bg-amber-500/10 text-amber-500' :
+                  graphStatus === 'error' ? 'bg-red-500/10 text-red-500' :
+                  'bg-[var(--text-muted)]/10 text-[var(--text-muted)]'
+                }`}>
+                  Graph: {graphStatus}
+                </span>
+              )}
+              <button
+                onClick={handleBuildGraph}
+                disabled={isBuildingGraph || graphStatus === 'indexing'}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: typeInfo.color + '20', color: typeInfo.color, border: `1px solid ${typeInfo.color}30` }}
+              >
+                {isBuildingGraph ? (
+                  <>
+                    <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    Building...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
+                    </svg>
+                    Build Graph
+                  </>
+                )}
+              </button>
+            </>
+          )}
+          {hasChanges && (
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              Save Changes
+            </button>
+          )}
+        </div>
       </div>
 
+      {graphBuildError && (
+        <div className="px-4 pb-2">
+          <div className="text-[11px] text-red-500 bg-red-500/10 px-3 py-2 rounded-lg border border-red-500/20 whitespace-pre-line">
+            {graphBuildError}
+          </div>
+        </div>
+      )}
 
       {/* Divider */}
       <div className="border-t" style={{ borderColor: 'var(--border)' }} />
@@ -1160,7 +1272,7 @@ const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' })
             <h3 className={`text-xs font-semibold truncate ${active ? 'text-[var(--text)]' : 'text-[var(--text-secondary)]'}`}>
               {kb.name}
             </h3>
-            <div className="text-[10px] text-[var(--text-muted)]">{formatNumber(itemCount)} files · {formatNumber(totalChunks)} chunks</div>
+            <div className="text-[10px] text-[var(--text-muted)]">{formatNumber(itemCount)} files · {formatNumber(totalChunks)} chunks{kb.graph_status ? ` · Graph: ${kb.graph_status}` : ''}</div>
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); if (onDelete) onDelete(kb.id) }}
@@ -1323,7 +1435,7 @@ const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' })
 
       {/* Footer with Status & Last Updated */}
       <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]/50">
-        {/* Embedding Status */}
+        {/* Embedding Status & Graph Status */}
         <div className="flex items-center gap-2">
           {itemCount === 0 ? (
             <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
@@ -1346,6 +1458,22 @@ const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' })
             <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />
               Not Indexed
+            </span>
+          )}
+          {kb.kb_type === 'graphrag' && kb.graph_status && (
+            <span className={`flex items-center gap-1.5 text-[10px] font-medium ${
+              kb.graph_status === 'ready' ? 'text-emerald-500' :
+              kb.graph_status === 'indexing' ? 'text-amber-500' :
+              kb.graph_status === 'error' ? 'text-red-500' :
+              'text-[var(--text-muted)]'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                kb.graph_status === 'ready' ? 'bg-emerald-500' :
+                kb.graph_status === 'indexing' ? 'bg-amber-500 animate-pulse' :
+                kb.graph_status === 'error' ? 'bg-red-500' :
+                'bg-[var(--text-muted)]'
+              }`} />
+              Graph: {kb.graph_status}
             </span>
           )}
         </div>
@@ -2174,6 +2302,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showGraph, setShowGraph] = useState(false)
   const [viewingFile, setViewingFile] = useState(null)
   const [viewingFileContent, setViewingFileContent] = useState(null)
   const [newKBDir, setNewKBDir] = useState({ name: '', description: '', kb_type: 'knowledge' })
@@ -2236,6 +2365,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
     if (selectedKB) {
       fetchKBDetails(selectedKB.id)
       setShowSettings(false)
+      setShowGraph(false)
     }
   }, [selectedKB?.id])
 
@@ -2339,10 +2469,14 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
           formData.append('file', file)
           formData.append('source_id', sourceId)
 
-          await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
+          const resp = await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
             method: 'POST',
             body: formData,
           })
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}))
+            throw new Error(data.details || data.error || `Upload failed for ${file.name}`)
+          }
         }
         setIsUploading(false)
         // Remove files from config since they're uploaded
@@ -2417,10 +2551,14 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
         formData.append('file', file)
         formData.append('source_id', sourceId)
 
-        await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
+        const resp = await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
           method: 'POST',
           body: formData,
         })
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}))
+          throw new Error(data.details || data.error || `Upload failed for ${file.name}`)
+        }
         uploadedCount++
       }
       
@@ -2446,7 +2584,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
       fetchKBs()
     } catch (err) {
       console.error('Failed to upload files:', err)
-      alert('Failed to upload files')
+      alert('Failed to upload files: ' + err.message)
     } finally {
       setIsUploading(false)
     }
@@ -2461,10 +2599,14 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('source_id', sourceId)
-        await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
+        const resp = await fetch(`/api/knowledge/${selectedKB.id}/upload`, {
           method: 'POST',
           body: formData,
         })
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}))
+          throw new Error(data.details || data.error || `Upload failed for ${file.name}`)
+        }
         uploadedCount++
       }
       if (uploadedCount > 0) {
@@ -2485,7 +2627,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
       fetchKBs()
     } catch (err) {
       console.error('Failed to upload files:', err)
-      alert('Failed to upload files')
+      alert('Failed to upload files: ' + err.message)
     } finally {
       setIsUploading(false)
     }
@@ -3145,7 +3287,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                   </button>
                 )}
                 <button
-                  onClick={() => setShowSettings(!showSettings)}
+                  onClick={() => { setShowGraph(false); setShowSettings(!showSettings) }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                   style={{
                     backgroundColor: showSettings ? 'var(--accent-subtle)' : 'var(--surface)',
@@ -3156,6 +3298,23 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                 >
                   Settings
                 </button>
+                {selectedKB.kb_type === 'graphrag' && selectedKB.graph_status === 'ready' && (
+                  <button
+                    onClick={() => { setShowSettings(false); setShowGraph(!showGraph) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{
+                      backgroundColor: showGraph ? 'var(--accent-subtle)' : 'var(--surface)',
+                      color: showGraph ? 'var(--accent)' : 'var(--text-secondary)',
+                      border: '1px solid',
+                      borderColor: showGraph ? 'var(--accent)' : 'var(--border)',
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
+                    </svg>
+                    Graph
+                  </button>
+                )}
                 <button
                   onClick={handleEmbed}
                   disabled={isEmbedding || selectedKBFiles.length === 0}
@@ -3297,6 +3456,12 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                   onEmbedSource={handleEmbedSource}
                   isEmbedding={isEmbedding}
                 />
+              </div>
+            )}
+
+            {showGraph && selectedKB?.kb_type === 'graphrag' && (
+              <div className="border-b" style={{ borderColor: 'var(--border)', height: '60vh', minHeight: 400 }}>
+                <GraphViewer kbId={selectedKB.id} onClose={() => setShowGraph(false)} />
               </div>
             )}
 

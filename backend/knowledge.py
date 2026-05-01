@@ -37,7 +37,7 @@ class KnowledgeBase(BaseModel):
     id: str = ""
     name: str
     description: str = ""
-    kb_type: Literal["knowledge", "vectorstore"] = "knowledge"
+    kb_type: Literal["knowledge", "vectorstore", "graphrag"] = "knowledge"
     retrieval_mode: Literal["focused", "full"] = "focused"
     hybrid_search: bool = True
     reranking: bool = True

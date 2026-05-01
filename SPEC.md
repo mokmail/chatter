@@ -128,18 +128,27 @@ AI-assisted writing and advanced note management.
 
 ### GraphRAG Architecture
 
-GraphRAG is a lightweight, self-hosted retrieval strategy that lives alongside the classic vectorstore RAG. Each Knowledge Base is created as either `vectorstore` (classic) or `graphrag` (graph), and the chat pipeline automatically dispatches to the correct retriever based on `kb_type`.
+GraphRAG is a lightweight, self-hosted retrieval strategy inspired by Neo4j's GraphRAG patterns. It lives alongside the classic vectorstore RAG. Each Knowledge Base is created as either `vectorstore` (classic) or `graphrag` (graph), and the chat pipeline automatically dispatches to the correct retriever based on `kb_type`.
 
 **Pipeline:**
-1. **Entity/Relationship Extraction** — Document chunks are fed to the active LLM provider with a structured extraction prompt. Output: JSON arrays of entities and relationships.
+1. **Entity/Relationship Extraction** — Document chunks are fed to the active LLM provider with a structured extraction prompt. Output: JSON arrays of entities and relationships. Supports configurable graph schema (entity types + relation types) per KB.
 2. **Graph Construction** — A `networkx.MultiDiGraph` is built. Nodes = entities (type, description, source chunks). Edges = relationships (description, weight, source chunks).
 3. **Community Detection** — `python-louvain` partitions the graph into communities.
 4. **Community Summarization** — Each community is summarized into a cohesive paragraph by the LLM.
-5. **Persistence** — `graph.json`, `communities.json`, and `index.json` are stored under `~/.cio-intelligence-hub/graphrag/{kb_id}/`.
+5. **Persistence** — `graph.json`, `communities.json`, and `index.json` are stored under `~/.cio-intelligence-hub/graphrag/{kb_id}/`. Optionally persisted to Neo4j when configured.
 
 **Search Modes:**
 - **Local Search** (default): Extract entities from the query, traverse the graph via BFS from matched nodes, return neighboring entities, relationships, and connected chunks.
 - **Global Search**: Embed the query, rank community summaries by vector similarity, return top-N summaries.
+- **Hybrid Search** (Neo4j VectorCypherRetriever pattern): Vector search on chunks to find starting points, then graph BFS from entities in those chunks. Returns both chunk texts and entity-relationship pairs.
+- **Path Search**: Extract up to 2 entities from the query, find shortest path between them in the graph.
+- **Neighborhood Search**: Direct neighbors only (depth=1) for quick relationship lookups.
+
+**Neo4j Integration (Optional):**
+- Add `neo4j:5-community` service to `docker-compose.yml`
+- Backend auto-detects `NEO4J_URI` env var
+- Graphs are saved to Neo4j in addition to JSON (non-blocking, falls back to NetworkX if Neo4j is unavailable)
+- Enables Cypher-based queries for complex traversals at scale
 
 ### Artifacts Architecture
 
@@ -231,6 +240,7 @@ Follow-up prompts are generated asynchronously after each assistant response com
 | DELETE | `/api/knowledge/:id` | Delete a knowledge base |
 | POST | `/api/knowledge/:id/files` | Upload files to a knowledge base |
 | POST | `/api/knowledge/:id/build-graph` | **(GraphRAG)** Build graph from KB files |
+| GET | `/api/knowledge/:id/graph` | **(GraphRAG)** Get graph data (nodes, edges, communities) for visualization |
 | GET | `/api/knowledge/:id/graph-status` | **(GraphRAG)** Get graph build status |
 | POST | `/api/followups/generate` | **(Follow-Ups)** Generate follow-up prompts for a message |
 | POST | `/api/followups/regenerate` | **(Follow-Ups)** Regenerate follow-up prompts |
@@ -280,7 +290,7 @@ Follow-up prompts are generated asynchronously after each assistant response com
 - `chunk_size`: int — *shared*
 - `chunk_overlap`: int — *shared*
 - `config`: dict (type-specific settings)
-  - *GraphRAG fields*: `graph_mode` ("local" | "global" | "hybrid"), `max_depth` (int), `top_k` (int), `extraction_model` (str), `graph_status` ("none" | "indexing" | "ready" | "error")
+  - *GraphRAG fields*: `graph_mode` ("local" | "global" | "hybrid" | "path" | "neighborhood"), `max_depth` (int), `top_k` (int), `extraction_model` (str), `graph_schema` (dict with entity_types/relation_types), `graph_status` ("none" | "indexing" | "ready" | "error")
 - `files`: list[KBFile]
 - `created_at`: float
 - `updated_at`: float
@@ -324,6 +334,7 @@ Follow-up prompts are generated asynchronously after each assistant response com
 - `rag_reranking`: bool
 - `rag_top_k`: int
 - **GraphRAG globals**: `graphrag_extraction_model` (str), `graphrag_default_mode` (str), `graphrag_max_depth` (int), `graphrag_top_k` (int)
+- **Neo4j globals**: `neo4j_uri` (str | null), `neo4j_user` (str | null), `neo4j_password` (str | null)
 - **Reasoning**: `reasoning_enabled` (bool), `reasoning_mode` (str), `reasoning_custom_start` (str), `reasoning_custom_end` (str), `ollama_think` (bool | null), `reasoning_effort` (str | null)
 - **Follow-Ups**: `followup_auto_generate` (bool), `followup_keep_in_chat` (bool), `followup_insert_to_input` (bool)
 - **Artifacts**: `artifacts_enabled` (bool), `artifacts_auto_open` (bool)
@@ -359,6 +370,7 @@ cio-intelligence-hub/
 │   ├── knowledge.py         # Knowledge base storage
 │   ├── vectorstore.py       # Vector store / classic RAG
 │   ├── graphrag_engine.py   # GraphRAG extraction, graph build, retrieval
+│   ├── graphrag_neo4j.py    # Optional Neo4j backend adapter for GraphRAG
 │   ├── reasoning.py         # Reasoning/thinking tag parsing and serialization
 │   ├── followups.py         # Follow-up prompt generation logic
 │   ├── artifacts.py         # Artifact detection, storage, versioning

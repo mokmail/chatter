@@ -1,4 +1,19 @@
 services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: cio-intelligence-hub-neo4j-dev
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    restart: unless-stopped
+
   backend:
     extends:
       file: docker-compose.yml
@@ -28,4 +43,8 @@ volumes:
   cio-intelligence-hub-data:
     driver: local
   frontend_node_modules:
+    driver: local
+  neo4j-data:
+    driver: local
+  neo4j-logs:
     driver: local

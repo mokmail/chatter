@@ -49,6 +49,13 @@ class Config(BaseModel):
     web_search_result_count: int = 10
     web_search_serpapi_base_url: Optional[str] = None
     web_search_searxng_base_url: Optional[str] = None
+    graphrag_extraction_model: Optional[str] = None
+    graphrag_default_mode: Literal["local", "global", "hybrid", "path", "neighborhood"] = "local"
+    graphrag_max_depth: int = 2
+    graphrag_top_k: int = 5
+    neo4j_uri: Optional[str] = None
+    neo4j_user: Optional[str] = None
+    neo4j_password: Optional[str] = None
 
 CONFIG_DIR = Path.home() / ".cio-intelligence-hub"
 CONFIG_FILE = CONFIG_DIR / "config.json"

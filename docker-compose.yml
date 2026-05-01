@@ -1,4 +1,19 @@
 services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: cio-intelligence-hub-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -10,8 +25,13 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - neo4j
     restart: unless-stopped
 
   frontend:
@@ -26,3 +46,5 @@ services:
 
 volumes:
   cio-intelligence-hub-data:
+  neo4j-data:
+  neo4j-logs:

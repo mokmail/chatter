@@ -34,6 +34,14 @@ from knowledge import (
 )
 from reasoning import ReasoningConfig, extract_reasoning, serialize_reasoning
 from vectorstore import add_to_vectorstore, get_kb_embeddings, delete_vectorstore, delete_source_chunks, get_collection, retrieve_relevant_chunks
+from graphrag_engine import (
+    build_graph_for_kb,
+    retrieve_graph_context,
+    get_graph_status,
+    set_graph_status,
+    delete_graph,
+    GRAPHRAG_DIR,
+)
 from loaders import process_upload
 from source_processor import fetch_source
 from notes import (
@@ -108,6 +116,13 @@ class ConfigUpdate(BaseModel):
     web_search_result_count: int | None = None
     web_search_serpapi_base_url: str | None = None
     web_search_searxng_base_url: str | None = None
+    graphrag_extraction_model: str | None = None
+    graphrag_default_mode: str | None = None
+    graphrag_max_depth: int | None = None
+    graphrag_top_k: int | None = None
+    neo4j_uri: str | None = None
+    neo4j_user: str | None = None
+    neo4j_password: str | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -125,7 +140,7 @@ class SearchRequest(BaseModel):
 class KBCreate(BaseModel):
     name: str
     description: str = ""
-    kb_type: str = "knowledge"  # knowledge, vectorstore
+    kb_type: str = "knowledge"  # knowledge, vectorstore, graphrag
 
 
 class KBUpdate(BaseModel):
@@ -209,7 +224,7 @@ async def _build_messages_with_rag(history_msgs, user_message, session_kb_ids, c
                 ]
             continue
 
-        # Default focused retrieval (either vectorstore or built-in file store)
+        # Default focused retrieval (either vectorstore, graphrag, or built-in file store)
         if kb.kb_type == "vectorstore":
             try:
                 embedding_model = kb.config.get("embeddingModel")
@@ -235,6 +250,44 @@ async def _build_messages_with_rag(history_msgs, user_message, session_kb_ids, c
                     f"Use this to answer the user's question. When the question relates to this content, "
                     f"cite or reference the relevant parts:\n\n{chunk_text}"
                 ]
+        elif kb.kb_type == "graphrag":
+            graph_status = get_graph_status(kb_id)
+            if graph_status == "ready":
+                try:
+                    cfg = get_config()
+                    graph_mode = kb.config.get("graph_mode", cfg.graphrag_default_mode)
+                    max_depth = kb.config.get("max_depth", cfg.graphrag_max_depth)
+                    top_k = kb.config.get("top_k", cfg.graphrag_top_k)
+                    conv_text = "\n".join([f"{m['role']}: {m['content']}" for m in conv_history[-4:]])
+                    query = f"{conv_text}\n\nuser: {user_message}"
+                    graph_context = await retrieve_graph_context(
+                        kb_id,
+                        query,
+                        mode=graph_mode,
+                        max_depth=max_depth,
+                        top_k=top_k,
+                        provider_id=kb.config.get("embeddingProvider"),
+                        embedding_model=kb.config.get("embeddingModel"),
+                    )
+                except Exception as e:
+                    print(f"GraphRAG retrieval error for {kb.name}, skipping: {e}")
+                    graph_context = []
+                if graph_context:
+                    context_parts_by_kb[kb_id] = [
+                        f"The user has activated the knowledge base \"{kb.name}\" (GraphRAG mode). "
+                        f"Use the following graph-derived context to answer the user's question:\n\n"
+                        + "\n\n".join(graph_context)
+                    ]
+            else:
+                # Fallback to full-file context if graph not ready
+                print(f"GraphRAG for KB {kb.name} not ready (status: {graph_status}), falling back to full context")
+                file_parts = [f"## {f.name}\n{f.content}" for f in kb.files if f.content]
+                if file_parts:
+                    file_text = "\n\n---\n\n".join(file_parts)
+                    context_parts_by_kb[kb_id] = [
+                        f"The user has activated the knowledge base \"{kb.name}\" in FULL CONTEXT mode (GraphRAG graph not built yet). "
+                        f"The entire content follows:\n\n{file_text}"
+                    ]
         else:
             # For non-vector KBs, we still use full context if they are small, or we could chunk them on the fly
             # For now, stick to the original logic for non-vector KBs but respect retrieval_mode if specified
@@ -770,6 +823,20 @@ async def update_settings(cfg_update: ConfigUpdate):
         update_data["web_search_serpapi_base_url"] = cfg_update.web_search_serpapi_base_url
     if cfg_update.web_search_searxng_base_url is not None:
         update_data["web_search_searxng_base_url"] = cfg_update.web_search_searxng_base_url
+    if cfg_update.graphrag_extraction_model is not None:
+        update_data["graphrag_extraction_model"] = cfg_update.graphrag_extraction_model
+    if cfg_update.graphrag_default_mode is not None:
+        update_data["graphrag_default_mode"] = cfg_update.graphrag_default_mode
+    if cfg_update.graphrag_max_depth is not None:
+        update_data["graphrag_max_depth"] = cfg_update.graphrag_max_depth
+    if cfg_update.graphrag_top_k is not None:
+        update_data["graphrag_top_k"] = cfg_update.graphrag_top_k
+    if cfg_update.neo4j_uri is not None:
+        update_data["neo4j_uri"] = cfg_update.neo4j_uri
+    if cfg_update.neo4j_user is not None:
+        update_data["neo4j_user"] = cfg_update.neo4j_user
+    if cfg_update.neo4j_password is not None:
+        update_data["neo4j_password"] = cfg_update.neo4j_password
 
     cfg = update_config(**update_data)
     return await get_settings()
@@ -793,6 +860,7 @@ async def list_kb():
                 "storage_path": kb.storage_path,
                 "file_count": len(kb.files),
                 "config": kb.config,
+                "graph_status": get_graph_status(kb.id) if kb.kb_type == "graphrag" else None,
                 "created_at": kb.created_at,
                 "updated_at": kb.updated_at
             } for kb in kbs
@@ -860,6 +928,7 @@ async def get_kb(kb_id: str):
             } for f in kb.files
         ],
         "config": kb.config,
+        "graph_status": get_graph_status(kb_id) if kb.kb_type == "graphrag" else None,
         "created_at": kb.created_at,
         "updated_at": kb.updated_at,
     }
@@ -911,10 +980,139 @@ async def update_kb(kb_id: str, req: KBUpdate):
 async def delete_kb(kb_id: str):
     """Delete a knowledge base."""
     success = delete_knowledge_base(kb_id)
+    delete_graph(kb_id)
+    delete_vectorstore(kb_id)
     return {"status": "ok" if success else "not_found"}
 
 
-@app.post("/api/knowledge/{kb_id}/files")
+@app.post("/api/knowledge/{kb_id}/build-graph")
+async def build_kb_graph(kb_id: str, force: bool = False):
+    """Build or rebuild the knowledge graph for a GraphRAG KB."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    
+    if kb.kb_type != "graphrag":
+        return JSONResponse({"error": "Knowledge base is not a GraphRAG type"}, status_code=400)
+    
+    current_status = get_graph_status(kb_id)
+    if current_status == "indexing" and not force:
+        return JSONResponse({"error": "Graph is already being built"}, status_code=409)
+    
+    if not kb.files:
+        return JSONResponse({"error": "Knowledge base has no files"}, status_code=400)
+    
+    # Chunk files using the KB's chunk settings
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=kb.chunk_size,
+        chunk_overlap=kb.chunk_overlap,
+        length_function=len,
+    )
+    
+    chunks = []
+    for f in kb.files:
+        if f.content:
+            file_chunks = splitter.split_text(f.content)
+            for chunk in file_chunks:
+                chunks.append((chunk, {"file_id": f.id, "file_name": f.name}))
+    
+    if not chunks:
+        files_info = [
+            {"name": f.name, "has_content": bool(f.content), "size_bytes": f.size_bytes, "file_type": f.file_type}
+            for f in kb.files
+        ]
+        empty_count = sum(1 for f in files_info if not f["has_content"])
+        return JSONResponse({
+            "error": "No processable content found",
+            "details": f"{len(kb.files)} file(s) present, {empty_count} have empty content. Ensure uploaded files are text-based (PDF, TXT, DOCX, MD).",
+            "files": files_info
+        }, status_code=400)
+    
+    # Run graph build asynchronously
+    try:
+        schema_raw = kb.config.get("graph_schema")
+        schema = None
+        if schema_raw and isinstance(schema_raw, str):
+            try:
+                schema = json.loads(schema_raw)
+            except Exception:
+                schema = None
+        elif isinstance(schema_raw, dict):
+            schema = schema_raw
+        result = await build_graph_for_kb(
+            kb_id,
+            chunks,
+            model=kb.config.get("extraction_model"),
+            provider_id=kb.config.get("embeddingProvider"),
+            schema=schema,
+        )
+        return {
+            "status": result.get("status", "ready"),
+            "entities": result.get("entities", 0),
+            "relationships": result.get("relationships", 0),
+            "communities": result.get("communities", 0),
+        }
+    except Exception as e:
+        set_graph_status(kb_id, "error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/knowledge/{kb_id}/graph")
+async def get_kb_graph(kb_id: str):
+    """Return the knowledge graph data (nodes, edges, communities) for visualization."""
+    kb = get_knowledge_base(kb_id)
+    if not kb:
+        return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
+    
+    if kb.kb_type != "graphrag":
+        return JSONResponse({"error": "Knowledge base is not a GraphRAG type"}, status_code=400)
+    
+    status = get_graph_status(kb_id)
+    if status != "ready":
+        return JSONResponse({"error": f"Graph is not ready (status: {status})"}, status_code=409)
+    
+    graph_path = GRAPHRAG_DIR / kb_id / "graph.json"
+    communities_path = GRAPHRAG_DIR / kb_id / "communities.json"
+    
+    if not graph_path.exists():
+        return JSONResponse({"error": "Graph data not found"}, status_code=404)
+    
+    try:
+        graph_data = json.loads(graph_path.read_text())
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to read graph: {str(e)}"}, status_code=500)
+    
+    communities = []
+    if communities_path.exists():
+        try:
+            communities = json.loads(communities_path.read_text())
+        except Exception:
+            pass
+    
+    # Normalize networkx node_link_data to simple nodes/edges
+    nodes = graph_data.get("nodes", [])
+    links = graph_data.get("links", [])
+    
+    # If nodes don't have id, use the networkx node id
+    for i, node in enumerate(nodes):
+        if "id" not in node:
+            node["id"] = f"node-{i}"
+    
+    # Normalize link keys
+    for link in links:
+        if "source" in link and isinstance(link["source"], dict):
+            link["source"] = link["source"].get("id", link["source"])
+        if "target" in link and isinstance(link["target"], dict):
+            link["target"] = link["target"].get("id", link["target"])
+    
+    return {
+        "nodes": nodes,
+        "edges": links,
+        "communities": communities,
+        "entity_count": len(nodes),
+        "relationship_count": len(links),
+    }
 async def add_kb_file(kb_id: str, req: KBFileAdd):
     """Add a file to a knowledge base."""
     file = add_file_to_knowledge_base(kb_id, req.name, req.content, req.file_type, req.content_url, req.metadata)
@@ -984,6 +1182,12 @@ async def upload_file(kb_id: str, file: UploadFile = File(...), source_id: str =
     """Upload a file, process its content, and add it to the KB."""
     content = await file.read()
     text_content = process_upload(content, file.filename)
+    
+    if not text_content.strip():
+        return JSONResponse({
+            "error": "Could not extract text content from the uploaded file.",
+            "details": f"File '{file.filename}' appears to be empty or uses an unsupported format. Please upload text-based files (PDF, TXT, DOCX, MD)."
+        }, status_code=400)
     
     # Estimate token count (simple word-based estimation for now)
     token_count = len(text_content.split())
