@@ -298,17 +298,19 @@ async def chat(req: ChatRequest):
     )
 
     user_message = req.message
-    session_kb_ids = get_session_kbs()
-    current_kb_ids = list(req.knowledge_base_ids)
-
-    # If the session is scoped to a KB, always include that KB
     session = get_chat_session()
-    if session.knowledge_base_id and session.knowledge_base_id not in current_kb_ids:
-        current_kb_ids.append(session.knowledge_base_id)
+
+    # Enforce strict KB isolation: if the session is scoped to a KB,
+    # all chat in this session must use ONLY that KB.
+    if session.knowledge_base_id is not None:
+        current_kb_ids = [session.knowledge_base_id]
+    else:
+        current_kb_ids = list(req.knowledge_base_ids)
 
     if current_kb_ids:
         update_session_kb(current_kb_ids)
-        session_kb_ids = get_session_kbs()
+
+    session_kb_ids = get_session_kbs()
 
     history = get_history()
 

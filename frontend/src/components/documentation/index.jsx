@@ -6,9 +6,12 @@ import Architecture from './Architecture'
 import Api from './Api'
 import Providers from './Providers'
 
+import DeepDive from './DeepDive'
+
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'features', label: 'Features' },
+  { id: 'deep-dive', label: 'Deep Dive' },
   { id: 'planned', label: 'Planned' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'api', label: 'API' },
@@ -22,6 +25,7 @@ const Documentation = () => {
     switch (activeTab) {
       case 'overview': return <Overview />
       case 'features': return <Features />
+      case 'deep-dive': return <DeepDive />
       case 'planned': return <Planned />
       case 'architecture': return <Architecture />
       case 'api': return <Api />

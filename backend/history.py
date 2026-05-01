@@ -126,11 +126,17 @@ class ChatHistory:
         return session
 
     def list_sessions(self, knowledge_base_id: str | None = None) -> list[dict]:
-        """List all available sessions, optionally filtered by knowledge_base_id."""
+        """List all available sessions, optionally filtered by knowledge_base_id.
+        When knowledge_base_id is None, return only main-chat sessions (no KB scope).
+        """
         sessions = []
         for session in self._load_all_sessions():
             if knowledge_base_id is not None:
                 if session.knowledge_base_id != knowledge_base_id:
+                    continue
+            else:
+                # Exclude KB-scoped sessions from the main session list
+                if session.knowledge_base_id is not None:
                     continue
             sessions.append({
                 "id": session.id,
@@ -152,6 +158,10 @@ class ChatHistory:
     def add_message(self, role: str, content: str, knowledge_base_ids: list[str] = None, notes: list[str] = None, parent_id: str = None, reasoning: str = "", sources: list[dict] = None) -> ChatMessage:
         """Add a new message to the current session."""
         session = self.get_session()
+        # Enforce strict KB isolation: if the session is scoped to a KB,
+        # all messages in it must be tied to that KB only.
+        if session.knowledge_base_id is not None:
+            knowledge_base_ids = [session.knowledge_base_id]
         msg = ChatMessage(
             role=role,
             content=content,
@@ -271,17 +281,25 @@ class ChatHistory:
         return removed
 
     def clear(self) -> None:
-        """Clear the current session (creates a new one)."""
-        self._create_session()
+        """Clear the current session. If the session is KB-scoped, create a fresh KB session with the same KB."""
+        active_session = self.get_session()
+        if active_session.knowledge_base_id is not None:
+            self.create_kb_session(active_session.knowledge_base_id)
+        else:
+            self._create_session()
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a specific session and its file. Returns True if deleted."""
         path = self._session_path(session_id)
         if path.exists():
+            session = self._load_session(session_id)
             path.unlink()
-            # If we deleted the active session, create a fresh one
+            # If we deleted the active session, create a fresh one (preserving KB scope)
             if self._get_active_id() == session_id:
-                self._create_session()
+                if session and session.knowledge_base_id is not None:
+                    self.create_kb_session(session.knowledge_base_id)
+                else:
+                    self._create_session()
             return True
         return False
 
@@ -294,15 +312,21 @@ class ChatHistory:
         session.archived_at = time.time()
         self._save_session(session)
 
+        # If we archived the active session, create a fresh one (preserving KB scope)
         if self._get_active_id() == session_id:
-            self._create_session()
+            if session.knowledge_base_id is not None:
+                self.create_kb_session(session.knowledge_base_id)
+            else:
+                self._create_session()
         return True
 
     def archive_all_sessions(self) -> int:
-        """Archive all sessions. Returns the number archived."""
+        """Archive all main-chat sessions. KB-scoped sessions are left untouched."""
         sessions = self._load_all_sessions()
         archived_count = 0
         for session in sessions:
+            if session.knowledge_base_id is not None:
+                continue
             if session.archived_at is None:
                 session.archived_at = time.time()
                 self._save_session(session)
@@ -313,11 +337,13 @@ class ChatHistory:
         return archived_count
 
     def delete_all_sessions(self) -> int:
-        """Delete all sessions. Returns the number removed."""
-        sessions = list(self.sessions_dir.glob("*.json"))
+        """Delete all main-chat sessions. KB-scoped sessions are left untouched."""
         removed_count = 0
-        for path in sessions:
+        for path in self.sessions_dir.glob("*.json"):
             try:
+                session = self._load_session(path.stem)
+                if session and session.knowledge_base_id is not None:
+                    continue
                 path.unlink()
                 removed_count += 1
             except Exception:
@@ -333,9 +359,14 @@ class ChatHistory:
         return removed_count
 
     def update_session_kb(self, kb_ids: list[str]) -> None:
-        """Update the session's active KB list."""
+        """Update the session's active KB list.
+        For KB-scoped sessions, only the session's assigned KB is allowed.
+        """
         session = self.get_session()
-        session.knowledge_base_ids = list(set(session.knowledge_base_ids + kb_ids))
+        if session.knowledge_base_id is not None:
+            session.knowledge_base_ids = [session.knowledge_base_id]
+        else:
+            session.knowledge_base_ids = list(set(session.knowledge_base_ids + kb_ids))
         self._save_session(session)
 
     def get_session_kbs(self) -> list[str]:

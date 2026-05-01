@@ -2206,6 +2206,27 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
   const [kbSessions, setKbSessions] = useState([])
   const [activeKbSessionId, setActiveKbSessionId] = useState(null)
   const [originalSessionId, setOriginalSessionId] = useState(null)
+  const originalSessionIdRef = useRef(null)
+
+  // Keep ref in sync with state so cleanup can access the latest value
+  useEffect(() => {
+    originalSessionIdRef.current = originalSessionId
+  }, [originalSessionId])
+
+  // Cleanup: restore the original non-KB session when this component unmounts
+  // or when the KB chat panel is closed without explicitly restoring.
+  useEffect(() => {
+    return () => {
+      if (originalSessionIdRef.current) {
+        fetch('/api/sessions/switch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: originalSessionIdRef.current })
+        }).catch(err => console.error('Failed to restore original session on unmount:', err))
+        originalSessionIdRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     fetchKBs()
@@ -2788,6 +2809,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
       const currentSession = sessionsData.sessions?.[0]
       if (currentSession) {
         setOriginalSessionId(currentSession.id)
+        originalSessionIdRef.current = currentSession.id
       }
     } catch (err) {
       console.error('Failed to get original session:', err)
@@ -2872,6 +2894,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
         body: JSON.stringify({ session_id: originalSessionId })
       }).catch(err => console.error('Failed to restore original session:', err))
       setOriginalSessionId(null)
+      originalSessionIdRef.current = null
     }
     setActiveKbSessionId(null)
     if (onRefresh) onRefresh()

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../hooks/useTheme'
 
-const Header = ({ title, models = [], currentModel, currentProviderId, onModelSelect, isRoleplayActive, roleplayCharacter, onRoleplayClick }) => {
+const Header = ({ title, models = [], currentModel, currentProviderId, onModelSelect }) => {
   const { theme, toggleTheme } = useTheme()
   const [showModels, setShowModels] = useState(false)
   const dropdownRef = useRef(null)

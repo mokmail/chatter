@@ -41,7 +41,6 @@ Add to existing session/message storage:
 | DELETE | `/api/sessions/:id` | Delete a session |
 | POST | `/api/sessions/archive-all` | Archive all sessions |
 | DELETE | `/api/sessions` | Delete all sessions |
-| GET | `/api/roleplay/tools` | Expose native history tools for agentic search |
 
 ### Search Implementation
 
@@ -73,7 +72,7 @@ Add to existing session/message storage:
 
 ### Agentic Search Tools
 
-Expose via `/api/roleplay/tools` (or new `/api/tools`):
+Expose via `/api/tools`:
 
 ```json
 {

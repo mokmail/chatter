@@ -23,8 +23,14 @@ const Api = () => {
     { method: 'GET', path: '/api/history', desc: 'Get all chat messages' },
     { method: 'DELETE', path: '/api/history', desc: 'Clear all chat history' },
     { method: 'GET', path: '/api/sessions', desc: 'List all sessions' },
-    { method: 'PUT', path: '/api/sessions/:id', desc: 'Update session (title, archive)' },
+    { method: 'PUT', path: '/api/sessions/:id', desc: 'Update session (title, archive, tags)' },
+    { method: 'PUT', path: '/api/sessions/:id/read', desc: 'Mark session as read' },
+    { method: 'GET', path: '/api/sessions/:id/export', desc: 'Export session as JSON' },
+    { method: 'POST', path: '/api/sessions/import', desc: 'Import session from JSON' },
     { method: 'DELETE', path: '/api/sessions/:id', desc: 'Delete a session' },
+    { method: 'POST', path: '/api/sessions/archive-all', desc: 'Archive all sessions' },
+    { method: 'DELETE', path: '/api/sessions', desc: 'Delete all sessions' },
+    { method: 'GET', path: '/api/search', desc: 'Fuzzy search across sessions and messages' },
   ]
   const kbEndpoints = [
     { method: 'GET', path: '/api/knowledge', desc: 'List all knowledge bases' },
@@ -34,14 +40,33 @@ const Api = () => {
     { method: 'POST', path: '/api/knowledge/:id/upload', desc: 'Upload + process file to KB' },
     { method: 'POST', path: '/api/knowledge/:id/embed', desc: 'Generate embeddings' },
     { method: 'POST', path: '/api/knowledge/:id/scrape', desc: 'Scrape URL and add to KB' },
+    { method: 'POST', path: '/api/knowledge/:id/build-graph', desc: 'GraphRAG: build graph from KB files' },
+    { method: 'GET', path: '/api/knowledge/:id/graph-status', desc: 'GraphRAG: get graph build status' },
   ]
-  const plannedEndpoints = [
-    { method: 'GET', path: '/api/search', desc: 'Fuzzy search sessions + messages' },
-    { method: 'POST', path: '/api/followups/generate', desc: 'Generate follow-up prompts (planned)' },
-    { method: 'POST', path: '/api/artifacts/detect', desc: 'Detect artifact in message (planned)' },
-    { method: 'GET', path: '/api/tools', desc: 'Expose agentic search tools (planned)' },
-    { method: 'GET', path: '/api/sessions/:id/export', desc: 'Export session JSON (planned)' },
-    { method: 'POST', path: '/api/sessions/import', desc: 'Import session JSON (planned)' },
+  const notesEndpoints = [
+    { method: 'GET', path: '/api/notes', desc: 'List all notes' },
+    { method: 'POST', path: '/api/notes', desc: 'Create a new note' },
+    { method: 'PUT', path: '/api/notes/:id', desc: 'Update a note' },
+    { method: 'DELETE', path: '/api/notes/:id', desc: 'Delete a note' },
+    { method: 'POST', path: '/api/notes/enhance', desc: 'AI rewrite selected text (SSE)' },
+    { method: 'GET', path: '/api/notes/export/:id', desc: 'Export note as txt or md' },
+    { method: 'GET', path: '/api/notes/enhance-config', desc: 'Get enhance model/provider settings' },
+    { method: 'PUT', path: '/api/notes/enhance-config', desc: 'Update enhance model/provider settings' },
+  ]
+  const followupEndpoints = [
+    { method: 'POST', path: '/api/followups/generate', desc: 'Generate follow-up prompts for a message' },
+    { method: 'POST', path: '/api/followups/regenerate', desc: 'Regenerate follow-up prompts' },
+  ]
+  const artifactEndpoints = [
+    { method: 'GET', path: '/api/artifacts/current', desc: 'Get current artifact for session' },
+    { method: 'GET', path: '/api/artifacts/:id', desc: 'Get specific artifact by ID' },
+    { method: 'POST', path: '/api/artifacts', desc: 'Create new artifact from model rewrite' },
+    { method: 'PUT', path: '/api/artifacts/:id', desc: 'Update artifact content' },
+    { method: 'GET', path: '/api/artifacts/:id/version-history', desc: 'Get all versions of an artifact' },
+    { method: 'POST', path: '/api/artifacts/detect', desc: 'Analyze message content for artifacts' },
+  ]
+  const toolsEndpoints = [
+    { method: 'GET', path: '/api/tools', desc: 'Expose agentic search tools for function calling' },
   ]
 
   return (
@@ -83,11 +108,23 @@ Response: text/plain SSE stream`}
       </div>
 
       <div>
-        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider flex items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
-          Planned
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>NEW</span>
-        </h3>
-        <div className="space-y-1.5">{plannedEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Notes</h3>
+        <div className="space-y-1.5 mb-4">{notesEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Follow-Up Prompts</h3>
+        <div className="space-y-1.5 mb-4">{followupEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Artifacts</h3>
+        <div className="space-y-1.5 mb-4">{artifactEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Agentic Tools</h3>
+        <div className="space-y-1.5">{toolsEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
       </div>
     </div>
   )

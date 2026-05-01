@@ -82,6 +82,7 @@ function AppInner() {
     archiveAllSessions,
     deleteAllSessions,
     loadSessions,
+    createSession,
     followups,
     setFollowups,
     generateFollowups,
@@ -320,7 +321,17 @@ function AppInner() {
     clearHistory()
   }
 
-  const handlePageSelect = (pageId) => {
+  const handlePageSelect = async (pageId) => {
+    // If navigating to main chat while inside a KB-scoped session,
+    // switch to a non-KB session first so the main chat stays isolated.
+    if (pageId === 'chat' && sessionKnowledgeBaseId) {
+      const nonKbSession = sessions.find(s => !s.knowledge_base_id)
+      if (nonKbSession) {
+        await switchSession(nonKbSession.id)
+      } else {
+        await createSession()
+      }
+    }
     setActivePage(pageId)
     const pathMap = { search: '/search', chat: '/chat', knowledge: '/knowledge', notes: '/notes', documentation: '/docs', settings: '/settings' }
     window.history.replaceState({}, '', pathMap[pageId] || '/')
@@ -389,11 +400,20 @@ function AppInner() {
 
   const handleDelete = async (msgId) => { await deleteMessage(msgId) }
 
-  // Switch to a different chat session, clearing follow-up state to prevent stale data
+  // Switch to a different chat session, clearing follow-up state to prevent stale data.
+  // Guards against accidentally switching to a KB-scoped session from the main chat context.
   const handleSwitchSession = async (sessionId) => {
-    await switchSession(sessionId)
+    const data = await switchSession(sessionId)
     setFollowups({})
     setFollowupLoading({})
+    if (data?.knowledge_base_id) {
+      const nonKbSession = sessions.find(s => !s.knowledge_base_id)
+      if (nonKbSession) {
+        await switchSession(nonKbSession.id)
+      } else {
+        await createSession()
+      }
+    }
   }
 
   const openSessionAction = (type, sessionId = null) => {

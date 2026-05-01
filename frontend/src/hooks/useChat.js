@@ -482,6 +482,21 @@ export const useChat = () => {
     }
   }
 
+  const createSession = async () => {
+    try {
+      const res = await axios.post(`${API_BASE}/sessions/create`, {})
+      setMessages(res.data.messages || [])
+      setCurrentSessionId(res.data.session_id)
+      setSessionKnowledgeBaseId(null)
+      setSessionKnowledgeBases([])
+      await loadSessions()
+      return res.data
+    } catch (err) {
+      console.error('Failed to create session:', err)
+      throw err
+    }
+  }
+
   const createKBSsession = async (knowledgeBaseId) => {
     try {
       const res = await axios.post(`${API_BASE}/sessions/create`, { knowledge_base_id: knowledgeBaseId })
@@ -536,6 +551,7 @@ export const useChat = () => {
     deleteAllSessions,
     copyToClipboard,
     loadSessions,
+    createSession,
     createKBSsession,
     followups,
     setFollowups,
