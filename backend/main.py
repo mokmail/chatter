@@ -1085,6 +1085,21 @@ async def get_kb_graph(kb_id: str):
     communities_path = GRAPHRAG_DIR / kb_id / "communities.json"
     
     if not graph_path.exists():
+        # Fallback: try official neo4j-graphrag backend
+        try:
+            from graphrag_neo4j_official import get_graph_data_official, is_available as official_avail
+            if official_avail():
+                official_data = get_graph_data_official(kb_id)
+                if official_data.get("nodes"):
+                    return {
+                        "nodes": official_data["nodes"],
+                        "edges": official_data["edges"],
+                        "communities": official_data.get("communities", []),
+                        "entity_count": official_data.get("entity_count", 0),
+                        "relationship_count": official_data.get("relationship_count", 0),
+                    }
+        except Exception as e:
+            print(f"Official graph data fallback error: {e}")
         return JSONResponse({"error": "Graph data not found"}, status_code=404)
     
     try:

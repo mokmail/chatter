@@ -29,9 +29,13 @@ import {
   WorkflowIcon,
   LinkIcon,
   RefreshIcon,
+  ErrorIcon,
+  HourglassIcon,
+  PendingIcon,
 } from './common/Icons'
 
 import GraphViewer from './GraphViewer'
+import KBChatDrawer from './KBChatDrawer'
 
 // Source Types for Knowledge Base
 const SOURCE_TYPES = {
@@ -203,16 +207,12 @@ const KB_TYPES = [
     icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" /></svg>,
     settings: [
       { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Graph Search, Full=Inject All Content' },
-      { key: 'graph_mode', label: 'Graph Search Mode', type: 'select', options: ['local', 'global', 'hybrid', 'path', 'neighborhood'], default: 'local', help: 'Local=BFS entity traversal, Global=community summary ranking, Hybrid=vector+graph, Path=shortest path, Neighborhood=direct neighbors' },
-      { key: 'max_depth', label: 'Max BFS Depth', type: 'number', default: 2, help: 'How many hops to traverse in local/hybrid search (1-5)' },
-      { key: 'top_k', label: 'Top K', type: 'number', default: 5, help: 'Number of communities/entities to include' },
-      { key: 'extraction_model', label: 'Extraction Model', type: 'text', default: '', help: 'Model for entity extraction (empty = default)' },
-      { key: 'graph_schema', label: 'Graph Schema (JSON)', type: 'textarea', default: '', help: 'Optional: {\"entity_types\":[\"PERSON\",\"ORG\",...],\"relation_types\":[\"WORKS_FOR\",\"LOCATED_IN\",...]}' },
       { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk for extraction' },
       { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
       { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
       { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
       { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
+      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
     ],
   },
 ]
@@ -1329,6 +1329,71 @@ const SourceConfigModal = ({ isOpen, onClose, sourceType, onAdd }) => {
 }
 
 // Premium Knowledge Base Card with full insights
+// Graph Status Badge Component
+const GraphStatusBadge = ({ status, size = 'md', showLabel = true }) => {
+  const configs = {
+    ready: {
+      icon: <CheckIcon size={size === 'sm' ? 10 : 14} className="shrink-0" />,
+      label: 'Graph Ready',
+      shortLabel: 'Ready',
+      colorClass: 'text-emerald-500',
+      bgClass: 'bg-emerald-500/10',
+      borderClass: 'border-emerald-500/20',
+      dotClass: 'bg-emerald-500',
+      tooltip: 'GraphRAG graph is built and ready for retrieval'
+    },
+    indexing: {
+      icon: <LoadingSpinner size={size === 'sm' ? 10 : 14} className="shrink-0 animate-spin" />,
+      label: 'Building Graph...',
+      shortLabel: 'Building',
+      colorClass: 'text-amber-500',
+      bgClass: 'bg-amber-500/10',
+      borderClass: 'border-amber-500/20',
+      dotClass: 'bg-amber-500 animate-pulse',
+      tooltip: 'GraphRAG graph is currently being built'
+    },
+    error: {
+      icon: <ErrorIcon size={size === 'sm' ? 10 : 14} className="shrink-0" />,
+      label: 'Graph Error',
+      shortLabel: 'Error',
+      colorClass: 'text-red-500',
+      bgClass: 'bg-red-500/10',
+      borderClass: 'border-red-500/20',
+      dotClass: 'bg-red-500',
+      tooltip: 'GraphRAG graph build failed. Rebuild in settings.'
+    },
+    none: {
+      icon: <PendingIcon size={size === 'sm' ? 10 : 14} className="shrink-0" />,
+      label: 'Graph Not Built',
+      shortLabel: 'Not Built',
+      colorClass: 'text-[var(--text-muted)]',
+      bgClass: 'bg-[var(--surface)]',
+      borderClass: 'border-[var(--border)]/50',
+      dotClass: 'bg-[var(--text-muted)]',
+      tooltip: 'GraphRAG graph has not been built yet'
+    }
+  }
+
+  const config = configs[status] || configs.none
+  const label = showLabel ? config.label : config.shortLabel
+
+  if (size === 'sm') {
+    return (
+      <span title={config.tooltip} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${config.colorClass} ${config.bgClass} ${config.borderClass}`}>
+        {config.icon}
+        {label}
+      </span>
+    )
+  }
+
+  return (
+    <span title={config.tooltip} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border ${config.colorClass} ${config.bgClass} ${config.borderClass}`}>
+      <span className={`w-2 h-2 rounded-full ${config.dotClass}`} />
+      {label}
+    </span>
+  )
+}
+
 const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const itemCount = kb.file_count || 0
@@ -3809,219 +3874,18 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
         )}
       </div>
 
-      {/* KB Chat Panel */}
-      {showKBChat && selectedKB && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--modal-backdrop)] backdrop-blur-sm"
-          onClick={(e) => { if (e.target === e.currentTarget) handleCloseKBChat() }}>
-          <div className="w-[1000px] h-[700px] rounded-2xl flex overflow-hidden animate-modal"
-            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--modal-shadow)' }}
-            onClick={(e) => e.stopPropagation()}>
-
-            {/* Session Sidebar */}
-            <div className="w-[220px] border-r flex flex-col" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
-              <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                <button
-                  onClick={createNewKbSession}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ background: 'var(--accent)', color: '#fff' }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                  New Chat
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {(kbSessions || []).map(session => (
-                  <div
-                    key={session.id}
-                    className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-xs transition-all ${
-                      session.id === activeKbSessionId ? 'glass-card-strong border border-[var(--accent)]/30' : 'hover:bg-[var(--surface)]'
-                    }`}
-                    style={{ color: session.id === activeKbSessionId ? 'var(--text)' : 'var(--text-secondary)' }}
-                    onClick={() => switchToKbSession(session.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="truncate font-medium">
-                        {session.title || session.preview || 'New Chat'}
-                      </div>
-                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        {session.message_count || 0} messages
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteKbSession(session.id) }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--danger)]/10 hover:text-[var(--danger)] transition-all"
-                      title="Delete session"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194.855-2.166 2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                {(!kbSessions || kbSessions.length === 0) && (
-                  <div className="text-center py-6">
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No chat sessions yet</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col">
-              {/* Chat Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b"
-                style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{ background: selectedType.color + '20' }}>
-                    {React.cloneElement(selectedType.icon, { style: { color: selectedType.color } })}
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-[var(--text)]">Chat with {selectedKB.name}</h3>
-                    <p className="text-[10px] text-[var(--text-tertiary)]">
-                      {selectedKB.config?.chat_model && selectedKB.config?.chat_model !== 'default'
-                        ? `Using ${selectedKB.config.chat_model} • Temp: ${selectedKB.config.temperature || '0.7'}`
-                        : 'RAG-powered conversation • Using default model'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {kbChatMessages.length > 0 && (
-                    <>
-                      <button
-                        onClick={handleClearKBChat}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
-                        style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                        title="Clear chat history"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.194.855-2.166 2.083-2.166H8.25c-1.228 0-2.083.972-2.083 2.166v.916" />
-                        </svg>
-                        Clear
-                      </button>
-                      <button
-                        onClick={() => handleSaveEntireChatToKB()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
-                        style={{ background: 'var(--accent-primary)', color: '#fff' }}
-                        title="Save entire chat to knowledge base"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        Save Chat
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={handleCloseKBChat}
-                    className="p-2 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-tertiary)] transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: 'var(--bg)' }}>
-                {kbChatMessages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                      style={{ background: 'var(--gradient-primary)' }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-white">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
-                      </svg>
-                    </div>
-                    <p className="text-sm text-[var(--text-secondary)]">Start a conversation using this knowledge base</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">Ask questions about your documents</p>
-                  </div>
-                ) : (
-                  kbChatMessages.map((msg, idx) => (
-                    <div key={msg.id || idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm ${
-                        msg.role === 'user'
-                          ? 'user-bubble'
-                          : msg.role === 'error'
-                            ? 'bg-[var(--danger)]/10 border border-[var(--danger)]/30'
-                            : 'glass-card border border-[var(--glass-border)]'
-                      }`}>
-                        <div className="prose prose-invert max-w-none text-[var(--text)]">
-                          {msg.content || (isKBChatStreaming && idx === kbChatMessages.length - 1 ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                            </span>
-                          ) : null)}
-                        </div>
-
-                        {msg.role === 'assistant' && msg.content && !isKBChatStreaming && (
-                          <div className="mt-3 pt-2 border-t border-[var(--border)]/50 flex items-center justify-between">
-                            <span className="text-[10px] text-[var(--text-muted)]">
-                              {msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleTimeString() : ''}
-                            </span>
-                            <button
-                              onClick={() => handleSaveChatToKB(msg)}
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-all hover:scale-105"
-                              style={{ 
-                                background: 'var(--surface)',
-                                color: 'var(--accent)',
-                                border: '1px solid var(--accent)',
-                              }}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                              </svg>
-                              Add to Knowledge Bases
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={kbChatEndRef} />
-              </div>
-
-              {/* Chat Input */}
-              <div className="px-4 py-4 border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                <form onSubmit={handleKBChatSubmit} className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={kbChatInput}
-                    onChange={(e) => setKBChatInput(e.target.value)}
-                    placeholder="Ask about your documents..."
-                    disabled={isKBChatStreaming}
-                    className="flex-1 px-4 py-3 rounded-xl text-sm outline-none transition-all"
-                    style={{
-                      backgroundColor: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!kbChatInput.trim() || isKBChatStreaming}
-                    className="p-3 rounded-xl transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      background: 'var(--surface)',
-                      color: 'var(--accent)',
-                      border: '1px solid var(--accent)',
-                    }}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                    </svg>
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* KB Chat Drawer */}
+      <KBChatDrawer
+        isOpen={showKBChat}
+        kb={selectedKB}
+        sessions={kbSessions}
+        activeSessionId={activeKbSessionId}
+        onClose={handleCloseKBChat}
+        onSwitchSession={switchToKbSession}
+        onCreateSession={createNewKbSession}
+        onDeleteSession={deleteKbSession}
+        onSaveChatToKB={handleSaveChatToKB}
+      />
 
       {/* Create KB Modal */}
       {showCreateModal && (

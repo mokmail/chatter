@@ -17,12 +17,31 @@ from config import get_config
 from chat import stream_chat
 from vectorstore import ProviderEmbeddings, retrieve_relevant_chunks
 
-# Optional Neo4j integration
+# Optional Neo4j integration (legacy raw-Cypher adapter)
 try:
     from graphrag_neo4j import get_store, Neo4jStore
 except Exception:
     get_store = lambda: None  # type: ignore
     Neo4jStore = None  # type: ignore
+
+# Optional official neo4j-graphrag adapter
+try:
+    from graphrag_neo4j_official import (
+        build_graph_official,
+        retrieve_graph_context_official,
+        delete_graph_official,
+        get_graph_status_official,
+        get_graph_data_official,
+        is_available as _official_is_available,
+    )
+except Exception:
+    build_graph_official = None  # type: ignore
+    retrieve_graph_context_official = None  # type: ignore
+    delete_graph_official = None  # type: ignore
+    get_graph_status_official = None  # type: ignore
+    get_graph_data_official = None  # type: ignore
+    _official_is_available = lambda: False  # type: ignore
+
 
 def _try_save_to_neo4j(kb_id: str, graph: Any, index: dict, communities: list[dict]):
     """Save graph to Neo4j if available."""
@@ -35,6 +54,7 @@ def _try_save_to_neo4j(kb_id: str, graph: Any, index: dict, communities: list[di
         finally:
             store.close()
 
+
 def _try_delete_from_neo4j(kb_id: str):
     """Delete graph from Neo4j if available."""
     store = get_store()
@@ -45,6 +65,18 @@ def _try_delete_from_neo4j(kb_id: str):
             print(f"Neo4j delete error (non-fatal): {e}")
         finally:
             store.close()
+
+
+def _use_official() -> bool:
+    """Return True when the official neo4j-graphrag backend should be used."""
+    import os
+    # Opt-in: set GRAPHRAG_USE_OFFICIAL=true to enable the official backend.
+    # Default is false to preserve backward compatibility with existing tests
+    # and NetworkX-only deployments.
+    env = os.environ.get("GRAPHRAG_USE_OFFICIAL", "false").lower()
+    if env == "true":
+        return _official_is_available()
+    return False
 
 GRAPHRAG_DIR = Path.home() / ".cio-intelligence-hub" / "graphrag"
 GRAPHRAG_DIR.mkdir(parents=True, exist_ok=True)
@@ -245,13 +277,23 @@ async def _summarize_single_community(
 def get_graph_status(kb_id: str) -> str:
     """Return graph status: none | indexing | ready | error"""
     idx_path = _index_path(kb_id)
-    if not idx_path.exists():
-        return "none"
-    try:
-        data = json.loads(idx_path.read_text())
-        return data.get("status", "none")
-    except Exception:
-        return "error"
+    if idx_path.exists():
+        try:
+            data = json.loads(idx_path.read_text())
+            status = data.get("status", "none")
+            if status in ("ready", "indexing", "error"):
+                return status
+        except Exception:
+            pass
+    # Fallback: check official Neo4j backend
+    if _use_official() and get_graph_status_official is not None:
+        try:
+            official_status = get_graph_status_official(kb_id)
+            if official_status == "ready":
+                return "ready"
+        except Exception:
+            pass
+    return "none"
 
 
 def set_graph_status(kb_id: str, status: str, error: str | None = None):
@@ -389,6 +431,14 @@ async def build_graph_for_kb(
     Returns:
         dict with stats about the built graph
     """
+    # Prefer official neo4j-graphrag when available
+    if _use_official() and build_graph_official is not None:
+        print(f"[GraphRAG] Using official neo4j-graphrag backend for KB {kb_id}")
+        return await build_graph_official(
+            kb_id, chunks, model=model, provider_id=provider_id, schema=schema
+        )
+
+    # Legacy NetworkX implementation below
     import networkx as nx
 
     set_graph_status(kb_id, "indexing")
@@ -632,6 +682,16 @@ async def retrieve_graph_context(
     Returns:
         List of context strings
     """
+    # Prefer official neo4j-graphrag for hybrid mode when available
+    if _use_official() and retrieve_graph_context_official is not None:
+        # Official library excels at hybrid retrieval; still allow legacy modes
+        # to work via NetworkX when the local JSON graph exists.
+        if mode == "hybrid":
+            return await retrieve_graph_context_official(
+                kb_id, query, mode=mode, max_depth=max_depth, top_k=top_k,
+                provider_id=provider_id, embedding_model=embedding_model,
+            )
+
     import networkx as nx
 
     graph_path = _graph_path(kb_id)
@@ -1149,8 +1209,13 @@ async def _global_search(
 def delete_graph(kb_id: str) -> bool:
     """Delete all graph data for a knowledge base."""
     import shutil
-    graph_dir = _kb_graph_dir(kb_id)
     _try_delete_from_neo4j(kb_id)
+    if delete_graph_official is not None:
+        try:
+            delete_graph_official(kb_id)
+        except Exception as e:
+            print(f"Official GraphRAG delete error (non-fatal): {e}")
+    graph_dir = _kb_graph_dir(kb_id)
     if graph_dir.exists():
         shutil.rmtree(graph_dir)
         return True

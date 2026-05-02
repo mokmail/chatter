@@ -69,6 +69,9 @@ import Visibility from '@mui/icons-material/Visibility'
 import Book from '@mui/icons-material/Book'
 import Psychology from '@mui/icons-material/Psychology'
 import CallSplit from '@mui/icons-material/CallSplit'
+import Error from '@mui/icons-material/Error'
+import HourglassEmpty from '@mui/icons-material/HourglassEmpty'
+import Pending from '@mui/icons-material/Pending'
 import ForkRight from '@mui/icons-material/ForkRight'
 import Layers from '@mui/icons-material/Layers'
 import FormatBold from '@mui/icons-material/FormatBold'
@@ -171,6 +174,9 @@ export const PinIcon = createIcon(PushPin)
 export const DatabaseIcon = createIcon(Storage)
 export const EyeIcon = createIcon(Visibility)
 export const XIcon = createIcon(Clear)
+export const ErrorIcon = createIcon(Error)
+export const HourglassIcon = createIcon(HourglassEmpty)
+export const PendingIcon = createIcon(Pending)
 export const LayersIcon = createIcon(Layers)
 export const FileTextIcon = createIcon(Article)
 export const MicIcon = createIcon(Mic)
