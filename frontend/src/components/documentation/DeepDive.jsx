@@ -243,17 +243,21 @@ sequenceDiagram
       <AccordionItem title="3. GraphRAG">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            GraphRAG is a graph-based retrieval strategy that lives alongside classic vectorstore RAG. Each KB can be set to <code>kb_type: &quot;graphrag&quot;</code>. The pipeline extracts entities and relationships from chunks, builds a networkx graph, detects communities via python-louvain, summarizes each community, and persists the graph. Search modes: <strong>Local</strong> (entity BFS traversal) and <strong>Global</strong> (community summary ranking).
+            GraphRAG is a graph-based retrieval strategy that lives alongside classic vectorstore RAG. Each KB can be set to <code>kb_type: "graphrag"</code>. The pipeline extracts entities and relationships from chunks using the LLM, builds a networkx graph, detects communities via python-louvain, summarizes each community, and persists the graph. Supports multiple search modes: <strong>Local</strong> (entity BFS traversal), <strong>Global</strong> (community summary ranking), <strong>Hybrid</strong> (vector + graph), <strong>Path</strong> (shortest path between entities), and <strong>Neighborhood</strong> (direct neighbors only). Optional Neo4j persistence enables Cypher-based queries at scale.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
               <li>• <strong>Entity Extraction:</strong> LLM extracts named entities with types and descriptions</li>
               <li>• <strong>Relationship Extraction:</strong> LLM extracts subject-predicate-object triples</li>
-              <li>• <strong>Community Detection:</strong> python-louvain partitions the graph</li>
-              <li>• <strong>Community Summaries:</strong> Each partition summarized into a paragraph</li>
+              <li>• <strong>Community Detection:</strong> python-louvain partitions the graph into clusters</li>
+              <li>• <strong>Community Summaries:</strong> Each partition summarized into a cohesive paragraph</li>
               <li>• <strong>Local Search:</strong> Extract query entities → BFS traversal → neighbor retrieval</li>
-              <li>• <strong>Global Search:</strong> Embed query → rank community summaries by similarity</li>
+              <li>• <strong>Global Search:</strong> Embed query → rank community summaries by vector similarity</li>
+              <li>• <strong>Hybrid Search:</strong> Vector search to find starting chunks, then graph BFS from entities</li>
+              <li>• <strong>Path Search:</strong> Find shortest path between two entities in the graph</li>
+              <li>• <strong>Neighborhood Search:</strong> Direct neighbors only (depth=1) for quick lookups</li>
+              <li>• <strong>Neo4j Persistence:</strong> Optional, falls back to NetworkX JSON if unavailable</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -332,16 +336,19 @@ sequenceDiagram
       <AccordionItem title="7. History & Search">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Chat history is grouped by time period (Today, Yesterday, Previous 7/30 Days, Archived) in the sidebar. Sessions have auto-generated titles (≤50 chars), unread indicators, and inline title editing. Global fuzzy search via Cmd+K uses SQLite FTS5 for full-text search across titles and message content, plus Levenshtein distance for title matching.
+            Chat history is grouped by time period (Today, Yesterday, Previous 7/30 Days, Archived) in the sidebar. Sessions have auto-generated titles (≤50 chars), unread indicators, and inline title editing. Global fuzzy search via Cmd+K uses SQLite FTS5 for full-text search across titles and message content, plus Levenshtein distance for title matching. Agentic search tools (<code>search_chats</code>, <code>view_chat</code>) are exposed via <code>/api/tools</code> for models with native function calling.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
               <li>• <strong>Time Grouping:</strong> Sidebar organizes by recency</li>
-              <li>• <strong>Auto Titles:</strong> Generated on first user message</li>
-              <li>• <strong>FTS5:</strong> Full-text search on titles and content</li>
+              <li>• <strong>Auto Titles:</strong> Generated on first user message (≤50 chars)</li>
+              <li>• <strong>FTS5:</strong> Full-text search on titles and message content</li>
+              <li>• <strong>Fuzzy Matching:</strong> Levenshtein distance for title similarity</li>
               <li>• <strong>Export/Import:</strong> JSON format for session backup/restore</li>
-              <li>• <strong>Agentic Tools:</strong> search_chats and view_chat exposed via /api/tools</li>
+              <li>• <strong>Agentic Tools:</strong> search_chats and view_chat via /api/tools</li>
+              <li>• <strong>Unread Indicators:</strong> Magenta/red dot for unread sessions</li>
+              <li>• <strong>Inline Editing:</strong> Click pencil icon to rename sessions</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>

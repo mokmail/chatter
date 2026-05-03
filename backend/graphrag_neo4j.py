@@ -123,9 +123,18 @@ class Neo4jStore:
         return results[:top_k * 3]
 
     def get_relationships(self, kb_id: str, entity_ids: list[str], top_k: int) -> list[dict]:
-        """Get relationships between given entity IDs."""
+        """Get relationships between given entity IDs.
+
+        Queries only edges where both endpoints are in the provided
+        entity list so we get a self-contained subgraph.  The limit is
+        multiplied by 5 to allow multiple edges per entity pair while
+        still bounding total output.
+        """
         label = _kb_label(kb_id)
         with self.driver.session() as session:
+            # Match directed edges where both source and target belong to
+            # the requested entity set – this produces a focused subgraph
+            # rather than a flood of loosely-connected edges.
             result = session.run(f"""
                 MATCH (a:{label})-[r]->(b:{label})
                 WHERE a.id IN $ids AND b.id IN $ids

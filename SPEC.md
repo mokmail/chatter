@@ -108,6 +108,68 @@ AI-assisted writing and advanced note management.
 | **Export** | Download as `.txt`, `.md`, or `.pdf` |
 | **Enhance Config** | Separate provider/model for enhance operations |
 
+### CIO Agent
+
+AI-powered code analysis and architectural understanding system. When activated by an admin, it analyzes the codebase and provides both **improvement suggestions** and **architectural insights** for general system comprehension.
+
+| Feature | Description |
+|---------|-------------|
+| **Admin Toggle** | Enable/disable in Settings → CIO Agent tab |
+| **Code Analysis** | Scans backend (Python) and frontend (JSX/TSX) code |
+| **Architecture Understanding** | Maps features, traces dependencies, identifies design patterns, traces data flows, and flags cross-cutting concerns |
+| **Suggestion Categories** | Improvement: Functionality, Documentation, Refactoring, Enhancement, Security, Performance, Bug. Understanding: Architecture, Feature Map, Dependency, Design Pattern, Data Flow, Cross-Cutting |
+| **Insight Types** | `improvement` (code fixes) and `understanding` (architectural insights) |
+| **Real-time Streaming** | SSE-based streaming of analysis results |
+| **Suggestion Details** | File path, line numbers, current code, suggested code, rationale, hypothesis, evidence, impact assessment |
+| **Persistence** | Suggestions stored in `~/.cio-intelligence-hub/cio_suggestions.json` |
+| **Management** | Dismiss, apply, adapt, or revert suggestions |
+| **Architecture Overview** | Dashboard card showing feature count, dependency count, pattern count, data flow count, and cross-cutting concern count |
+
+**Analysis Capabilities (Improvement):**
+- Missing docstrings on functions/classes
+- Unresolved TODO/FIXME comments
+- Missing type hints
+- Long functions (>50 lines)
+- Duplicate/copy-paste code detection
+- Missing PropTypes in React components
+- Debug code (console.log) left behind
+- Inline styles in React components
+- Bare except clauses
+- Hardcoded credentials/secrets
+- Insecure HTTP links in docs
+- Missing alt text in markdown images
+- Code blocks without language specifier
+
+**Analysis Capabilities (Understanding):**
+- **Feature Mapping**: Identifies features from API routes, React components, service classes, and custom hooks; flags features spanning too many modules (SRP violation)
+- **Dependency Tracing**: Builds import dependency graph; flags high-coupling modules (>10 imports), critical hub modules (>5 dependents), and circular dependencies
+- **Design Pattern Detection**: Identifies Factory, Singleton, Middleware, Observer/Event, Redux patterns; detects anti-patterns (god objects, broad exception handling, prop drilling, context overuse)
+- **Data Flow Tracing**: Maps all API entry points and client-side API calls; provides API surface overview with endpoint counts
+- **Cross-Cutting Concern Analysis**: Identifies where auth, logging, error handling, and config are distributed; flags scattered cross-cutting logic
+- **Module Responsibility Analysis**: Detects modules with too many distinct responsibilities (SRP violations)
+- **LLM Architectural Review**: Asks LLM to assess each file's role, interfaces, consumers, and cross-cutting concerns
+
+**Configuration Fields:**
+- `cio_agent_enabled` — Toggle agent on/off
+- `cio_agent_auto_scan` — Auto-run analysis when enabled
+- `cio_agent_include_tests` — Include test files in analysis
+- `cio_agent_include_understanding` — Include architectural understanding phase (default: true)
+- `cio_agent_last_scan` — Timestamp of last analysis
+- `cio_agent_exclude_dirs` — Directories to exclude from analysis
+- `cio_agent_exclude_files` — Files to exclude from analysis
+- `cio_agent_target_dir` — Target directory for analysis
+
+**API Endpoints:**
+- `GET /cio-agent/status` — Current status (includes understanding_count, improvement_count, understanding_categories)
+- `POST /cio-agent/toggle` — Enable/disable (supports include_understanding parameter)
+- `POST /cio-agent/analyze` — Trigger analysis (supports include_understanding parameter)
+- `GET /cio-agent/stream` — SSE stream results
+- `POST /cio-agent/analyze-and-save` — Blocking analysis (supports include_understanding parameter)
+- `GET /cio-agent/suggestions` — List all suggestions (filterable by category, status, priority, search)
+- `GET /cio-agent/suggestion/{id}` — Get specific suggestion
+- `PATCH /cio-agent/suggestion/{id}` — Update (apply/dismiss)
+- `GET /cio-agent/stats` — Statistics dashboard
+
 ### Knowledge Base Types
 
 | Type | Icon | Description | Settings |

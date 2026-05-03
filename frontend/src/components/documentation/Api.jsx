@@ -37,11 +37,20 @@ const Api = () => {
     { method: 'POST', path: '/api/knowledge', desc: 'Create a new knowledge base' },
     { method: 'PUT', path: '/api/knowledge/:id', desc: 'Update KB name or config' },
     { method: 'DELETE', path: '/api/knowledge/:id', desc: 'Delete a knowledge base' },
-    { method: 'POST', path: '/api/knowledge/:id/upload', desc: 'Upload + process file to KB' },
-    { method: 'POST', path: '/api/knowledge/:id/embed', desc: 'Generate embeddings' },
+    { method: 'POST', path: '/api/knowledge/:id/files', desc: 'Upload files to KB' },
     { method: 'POST', path: '/api/knowledge/:id/scrape', desc: 'Scrape URL and add to KB' },
     { method: 'POST', path: '/api/knowledge/:id/build-graph', desc: 'GraphRAG: build graph from KB files' },
+    { method: 'GET', path: '/api/knowledge/:id/graph', desc: 'GraphRAG: get graph data for visualization' },
     { method: 'GET', path: '/api/knowledge/:id/graph-status', desc: 'GraphRAG: get graph build status' },
+    { method: 'POST', path: '/api/knowledge/:id/chat', desc: 'Chat with KB-scoped session (isolated)' },
+  ]
+  const cioAgentEndpoints = [
+    { method: 'GET', path: '/api/cio-agent/status', desc: 'Get CIO Agent current status' },
+    { method: 'POST', path: '/api/cio-agent/toggle', desc: 'Enable/disable CIO Agent' },
+    { method: 'POST', path: '/api/cio-agent/analyze', desc: 'Trigger code analysis' },
+    { method: 'GET', path: '/api/cio-agent/stream', desc: 'SSE stream analysis results' },
+    { method: 'GET', path: '/api/cio-agent/suggestions', desc: 'List all suggestions' },
+    { method: 'PATCH', path: '/api/cio-agent/suggestion/:id', desc: 'Update suggestion (apply/dismiss)' },
   ]
   const notesEndpoints = [
     { method: 'GET', path: '/api/notes', desc: 'List all notes' },
@@ -124,7 +133,12 @@ Response: text/plain SSE stream`}
 
       <div>
         <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Agentic Tools</h3>
-        <div className="space-y-1.5">{toolsEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+        <div className="space-y-1.5 mb-4">{toolsEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>CIO Agent</h3>
+        <div className="space-y-1.5">{cioAgentEndpoints.map(e => <ApiRow key={`${e.method}-${e.path}`} {...e} />)}</div>
       </div>
     </div>
   )

@@ -56,6 +56,23 @@ class Config(BaseModel):
     neo4j_uri: Optional[str] = None
     neo4j_user: Optional[str] = None
     neo4j_password: Optional[str] = None
+    cio_agent_enabled: bool = False
+    cio_agent_auto_scan: bool = True
+    cio_agent_include_tests: bool = False
+    cio_agent_include_understanding: bool = True
+    cio_agent_last_scan: Optional[str] = None
+    cio_agent_exclude_dirs: list[str] = [
+        'node_modules', '__pycache__', '.git', 'venv', 'env', '.venv', '.env',
+        'dist', 'build', 'backup', '.vscode', '.pytest_cache', '.claude',
+        '.mypy_cache', '.ruff_cache', '.tox', 'coverage', '.coverage',
+        '.copilot', '.idea', '.next', 'out', '.nuxt', '.output',
+    ]
+    cio_agent_exclude_files: list[str] = [
+        'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
+        'vite.config.js', 'vite.config.ts', 'tailwind.config.js',
+        'postcss.config.js', 'jest.config.js', 'eslint.config.js',
+    ]
+    cio_agent_target_dir: Optional[str] = None
 
 CONFIG_DIR = Path.home() / ".cio-intelligence-hub"
 CONFIG_FILE = CONFIG_DIR / "config.json"

@@ -70,6 +70,7 @@ const Overview = () => (
           { title: 'History Search', desc: 'Cmd+K fuzzy search across all chats' },
           { title: 'Follow-Up Prompts', desc: 'Auto-generated contextual questions' },
           { title: 'KB Chat Isolation', desc: 'KB-scoped conversations never leak' },
+          { title: 'CIO Agent', desc: 'AI code analysis with 10+ rule categories' },
           { title: 'Dark / Light Mode', desc: 'Full theme support with persistence' },
         ].map(cap => (
           <div key={cap.title} className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>

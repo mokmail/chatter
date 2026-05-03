@@ -36,6 +36,7 @@ from reasoning import ReasoningConfig, extract_reasoning, serialize_reasoning
 from vectorstore import add_to_vectorstore, get_kb_embeddings, delete_vectorstore, delete_source_chunks, get_collection, retrieve_relevant_chunks
 from graphrag_engine import (
     build_graph_for_kb,
+    update_graph_for_kb,
     retrieve_graph_context,
     get_graph_status,
     set_graph_status,
@@ -52,6 +53,7 @@ from code_executor import execute_code, create_session, delete_session, get_sess
 from web_search import WEB_SEARCH_TOOLS, execute_web_tool, search_web, fetch_url
 from followups import generate_followups
 from artifacts import detect_artifact_content, create_artifact, get_artifact, get_current_artifact, update_artifact, get_artifact_versions, switch_artifact_version
+from cio_agent import register_routes as register_cio_agent_routes
 
 
 app = FastAPI(title="CIO Intelligence Hub", description="Open WebUI-inspired AI Chat Application")
@@ -123,6 +125,13 @@ class ConfigUpdate(BaseModel):
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
+    cio_agent_enabled: bool | None = None
+    cio_agent_auto_scan: bool | None = None
+    cio_agent_include_tests: bool | None = None
+    cio_agent_include_understanding: bool | None = None
+    cio_agent_exclude_dirs: list[str] | None = None
+    cio_agent_exclude_files: list[str] | None = None
+    cio_agent_target_dir: str | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -837,6 +846,20 @@ async def update_settings(cfg_update: ConfigUpdate):
         update_data["neo4j_user"] = cfg_update.neo4j_user
     if cfg_update.neo4j_password is not None:
         update_data["neo4j_password"] = cfg_update.neo4j_password
+    if cfg_update.cio_agent_enabled is not None:
+        update_data["cio_agent_enabled"] = cfg_update.cio_agent_enabled
+    if cfg_update.cio_agent_auto_scan is not None:
+        update_data["cio_agent_auto_scan"] = cfg_update.cio_agent_auto_scan
+    if cfg_update.cio_agent_include_tests is not None:
+        update_data["cio_agent_include_tests"] = cfg_update.cio_agent_include_tests
+    if cfg_update.cio_agent_include_understanding is not None:
+        update_data["cio_agent_include_understanding"] = cfg_update.cio_agent_include_understanding
+    if cfg_update.cio_agent_exclude_dirs is not None:
+        update_data["cio_agent_exclude_dirs"] = cfg_update.cio_agent_exclude_dirs
+    if cfg_update.cio_agent_exclude_files is not None:
+        update_data["cio_agent_exclude_files"] = cfg_update.cio_agent_exclude_files
+    if cfg_update.cio_agent_target_dir is not None:
+        update_data["cio_agent_target_dir"] = cfg_update.cio_agent_target_dir
 
     cfg = update_config(**update_data)
     return await get_settings()
@@ -986,8 +1009,14 @@ async def delete_kb(kb_id: str):
 
 
 @app.post("/api/knowledge/{kb_id}/build-graph")
-async def build_kb_graph(kb_id: str, force: bool = False):
-    """Build or rebuild the knowledge graph for a GraphRAG KB."""
+async def build_kb_graph(kb_id: str, force: bool = False, incremental: bool = True):
+    """Build or update the knowledge graph for a GraphRAG KB.
+    
+    Args:
+        force: Force a full rebuild even if a graph already exists
+        incremental: If True and a graph already exists, only process new/changed chunks.
+                    If False or force=True, rebuild from scratch.
+    """
     kb = get_knowledge_base(kb_id)
     if not kb:
         return JSONResponse({"error": "Knowledge base not found"}, status_code=404)
@@ -1040,16 +1069,21 @@ async def build_kb_graph(kb_id: str, force: bool = False):
     elif isinstance(schema_raw, dict):
         schema = schema_raw
 
+    # Decide whether to do incremental update or full rebuild
+    use_incremental = incremental and not force and current_status == "ready"
+    build_func = update_graph_for_kb if use_incremental else build_graph_for_kb
+
     # Start build in background so the frontend can poll for progress
     import asyncio
-    asyncio.create_task(build_graph_for_kb(
+    asyncio.create_task(build_func(
         kb_id,
         chunks,
         model=kb.config.get("extraction_model"),
         provider_id=kb.config.get("embeddingProvider"),
         schema=schema,
     ))
-    return {"status": "started", "message": "Graph build started"}
+    mode = "incremental update" if use_incremental else "full build"
+    return {"status": "started", "message": f"Graph {mode} started", "mode": mode}
 
 
 @app.get("/api/knowledge/{kb_id}/graph-progress")
@@ -2673,6 +2707,9 @@ async def api_get_tools():
             }
         ]
     }
+
+# Register CIO Agent routes
+register_cio_agent_routes(app)
 
 
 if __name__ == "__main__":

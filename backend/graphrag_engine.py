@@ -6,10 +6,19 @@ Supports multiple retrieval modes inspired by Neo4j GraphRAG patterns:
 - hybrid: vector search on chunks + graph traversal (VectorCypherRetriever pattern)
 - path: shortest path between entities mentioned in query
 - neighborhood: direct neighbors only (depth=1)
+
+Graph Persistence & Incremental Updates:
+- Once a graph is built, it is persisted to disk (graph.json, communities.json, index.json)
+- update_graph_for_kb() merges new entities/relationships into an existing graph,
+  only re-extracts from new/changed chunks and re-computes affected communities
+- build_graph_for_kb() still supports full rebuild when force=true
+- Source chunk hashes are tracked to enable delta detection
 """
 import asyncio
+import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -180,6 +189,94 @@ def _index_path(kb_id: str) -> Path:
 
 def _normalize_entity_name(name: str) -> str:
     return name.strip().lower()
+
+
+def _entity_similarity_fuzzy(name_a: str, name_b: str) -> float:
+    """Compute a simple fuzzy similarity between two entity names.
+    Uses token overlap ratio (Jaccard-like) to catch e.g. "OpenAI" vs "openai inc.".
+    """
+    tokens_a = set(re.findall(r'\w+', _normalize_entity_name(name_a)))
+    tokens_b = set(re.findall(r'\w+', _normalize_entity_name(name_b)))
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    return len(intersection) / len(union)
+
+
+def _resolve_entity(norm_name: str, new_data: dict, existing_entities: dict) -> dict:
+    """Merge a newly extracted entity into the existing entity map.
+    
+    If the normalized name exists, merge descriptions and source chunks.
+    If a fuzzy match (>=0.8 similarity) exists, merge into that entry.
+    Otherwise, create a new entry.
+    """
+    if norm_name in existing_entities:
+        existing = existing_entities[norm_name]
+        # Merge: prefer longer/earlier description, accumulate source chunks
+        if len(new_data.get("description", "")) > len(existing.get("description", "")):
+            existing["description"] = new_data["description"]
+        # Keep the most specific type
+        type_order = {"PERSON": 1, "ORG": 2, "TECH": 3, "CONCEPT": 4, "LOCATION": 5, "EVENT": 6, "OTHER": 99}
+        existing_type_rank = type_order.get(existing.get("type", "OTHER"), 99)
+        new_type_rank = type_order.get(new_data.get("type", "OTHER"), 99)
+        if new_type_rank < existing_type_rank:
+            existing["type"] = new_data.get("type", existing["type"])
+        # Keep the display name with proper casing (longer or more capitalized)
+        if len(new_data.get("name", "")) > len(existing.get("name", "")):
+            existing["name"] = new_data["name"]
+        # Accumulate source chunks
+        for sc in new_data.get("source_chunks", []):
+            if sc not in existing.get("source_chunks", []):
+                existing.setdefault("source_chunks", []).append(sc)
+        return existing
+    
+    # Fuzzy matching for near-duplicate entities
+    for existing_norm, existing in existing_entities.items():
+        sim = _entity_similarity_fuzzy(norm_name, existing_norm)
+        if sim >= 0.8:
+            # Merge into this existing entity
+            if len(new_data.get("description", "")) > len(existing.get("description", "")):
+                existing["description"] = new_data["description"]
+            type_order = {"PERSON": 1, "ORG": 2, "TECH": 3, "CONCEPT": 4, "LOCATION": 5, "EVENT": 6, "OTHER": 99}
+            if type_order.get(new_data.get("type", "OTHER"), 99) < type_order.get(existing.get("type", "OTHER"), 99):
+                existing["type"] = new_data.get("type", existing["type"])
+            for sc in new_data.get("source_chunks", []):
+                if sc not in existing.get("source_chunks", []):
+                    existing.setdefault("source_chunks", []).append(sc)
+            return existing
+    
+    # No match found — create new
+    existing_entities[norm_name] = dict(new_data)
+    return existing_entities[norm_name]
+
+
+def _chunk_hash(text: str) -> str:
+    """Compute a content hash for a text chunk to enable incremental updates."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_existing_graph(kb_id: str) -> tuple[Any | None, dict | None, list[dict] | None]:
+    """Load an existing graph from disk. Returns (graph, index, communities) or (None, None, None)."""
+    import networkx as nx
+    graph_path = _graph_path(kb_id)
+    index_path = _index_path(kb_id)
+    communities_path = _communities_path(kb_id)
+    
+    if not graph_path.exists() or not index_path.exists():
+        return None, None, None
+    
+    try:
+        graph_data = json.loads(graph_path.read_text())
+        graph = nx.node_link_graph(graph_data)
+        index = json.loads(index_path.read_text())
+        communities = []
+        if communities_path.exists():
+            communities = json.loads(communities_path.read_text())
+        return graph, index, communities
+    except Exception as e:
+        print(f"[GraphRAG] Error loading existing graph for {kb_id}: {e}")
+        return None, None, None
 
 
 def _safe_json_loads(text: str) -> dict:
@@ -452,6 +549,7 @@ async def build_graph_for_kb(
         # 1. Extract entities and relationships from all chunks in batches
         all_entities: dict[str, dict] = {}  # normalized_name -> entity data
         all_relationships: list[dict] = []
+        chunk_hashes: dict[str, str] = {}  # chunk_hash -> chunk_text (for incremental tracking)
         total = len(chunks)
         num_batches = (total + batch_size - 1) // batch_size
 
@@ -463,6 +561,11 @@ async def build_graph_for_kb(
             msg = f"Extracting entities from batch {batch_idx + 1} of {num_batches} ({batch_start + 1}-{batch_end} chunks)..."
             print(f"[GraphRAG] {msg}")
             set_graph_progress(kb_id, batch_idx, num_batches + 3, "extraction", msg)
+
+            # Track chunk hashes for incremental updates
+            for i, (text, meta) in enumerate(batch):
+                ch = _chunk_hash(text)
+                chunk_hashes[ch] = text
 
             entities, relationships = await extract_entities_and_relationships_batch(
                 batch, model=extraction_model, provider_id=extraction_provider, schema=schema
@@ -479,19 +582,24 @@ async def build_graph_for_kb(
                         "description": e.get("description", ""),
                         "source_chunks": [],
                     }
-                all_entities[norm]["source_chunks"].append({"batch": f"{batch_start + 1}-{batch_end}"})
+                for i, (text, meta) in enumerate(batch):
+                    ch = _chunk_hash(text)
+                    sc = {"batch": f"{batch_start + 1}-{batch_end}", "hash": ch}
+                    if sc not in all_entities[norm]["source_chunks"]:
+                        all_entities[norm]["source_chunks"].append(sc)
 
             for r in relationships:
                 src = _normalize_entity_name(r.get("source", ""))
                 tgt = _normalize_entity_name(r.get("target", ""))
                 if not src or not tgt:
                     continue
+                batch_hash = _chunk_hash(batch[0][0]) if batch else ""
                 all_relationships.append({
                     "source": src,
                     "relation": r.get("relation", "related_to"),
                     "target": tgt,
                     "description": r.get("description", ""),
-                    "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}"}],
+                    "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}", "hash": batch_hash}],
                 })
 
             await asyncio.sleep(0.2)
@@ -624,6 +732,8 @@ async def build_graph_for_kb(
             "entity_count": len(all_entities),
             "relationship_count": len(all_relationships),
             "community_count": len(community_summaries),
+            "chunk_hashes": list(chunk_hashes.keys()),
+            "build_timestamp": __import__("time").time(),
             "community_summaries": [
                 {
                     "id": c["id"],
@@ -651,6 +761,358 @@ async def build_graph_for_kb(
         }
     except Exception as e:
         err_msg = f"Graph build failed: {e}"
+        print(f"[GraphRAG] {err_msg}")
+        import traceback
+        traceback.print_exc()
+        set_graph_status(kb_id, "error", error=str(e))
+        set_graph_progress(kb_id, 0, 1, "error", err_msg)
+        return {"status": "error", "entities": 0, "relationships": 0, "communities": 0, "error": str(e)}
+
+
+async def update_graph_for_kb(
+    kb_id: str,
+    chunks: list[tuple[str, dict[str, Any]]],
+    model: str | None = None,
+    provider_id: str | None = None,
+    schema: dict | None = None,
+) -> dict:
+    """Incrementally update an existing knowledge graph with new/changed chunks.
+
+    Instead of rebuilding from scratch, this function:
+    1. Computes hashes for all incoming chunks
+    2. Compares against stored chunk_hashes in the existing index
+    3. Only extracts entities/relationships from new or changed chunks
+    4. Merges new entities/relationships into the existing graph (with fuzzy dedup)
+    5. Re-runs community detection on the updated graph
+    6. Re-summarizes only communities that have changed
+    7. Re-embeds community summaries
+
+    Falls back to a full rebuild if no existing graph is found.
+    """
+    if _use_official() and build_graph_official is not None:
+        print(f"[GraphRAG] Incremental update: delegating to official backend for KB {kb_id}")
+        return await build_graph_official(kb_id, chunks, model=model, provider_id=provider_id, schema=schema)
+
+    import networkx as nx
+
+    # Load existing graph
+    existing_graph, existing_index, existing_communities = _load_existing_graph(kb_id)
+    
+    if existing_graph is None or existing_index is None or existing_index.get("status") != "ready":
+        print(f"[GraphRAG] No existing graph for {kb_id}, falling back to full build")
+        return await build_graph_for_kb(kb_id, chunks, model=model, provider_id=provider_id, schema=schema)
+
+    set_graph_status(kb_id, "indexing")
+    cfg = get_config()
+    extraction_model = model or cfg.active_model
+    extraction_provider = provider_id or cfg.active_provider_id
+    batch_size = (schema.get("batch_size", 5) if schema else 5)
+
+    try:
+        # 1. Determine which chunks are new/changed
+        old_hashes = set(existing_index.get("chunk_hashes", []))
+        new_chunk_hashes = {}
+        for text, meta in chunks:
+            ch = _chunk_hash(text)
+            new_chunk_hashes[ch] = text
+
+        new_hashes = set(new_chunk_hashes.keys())
+        added_hashes = new_hashes - old_hashes
+        removed_hashes = old_hashes - new_hashes
+
+        if not added_hashes and not removed_hashes:
+            print(f"[GraphRAG] No changes detected for KB {kb_id}, graph is up to date")
+            set_graph_status(kb_id, "ready")
+            return {
+                "status": "ready",
+                "entities": existing_graph.number_of_nodes(),
+                "relationships": existing_graph.number_of_edges(),
+                "communities": len(existing_communities or []),
+                "changes": "none",
+            }
+
+        print(f"[GraphRAG] Incremental update for {kb_id}: {len(added_hashes)} new, {len(removed_hashes)} removed chunks")
+
+        # 2. If chunks were removed, we need to remove stale entities/relationships
+        if removed_hashes:
+            set_graph_progress(kb_id, 0, len(added_hashes) + len(removed_hashes) + 3, "cleanup", "Removing stale entities...")
+            # Remove nodes whose only source chunks are removed ones
+            stale_nodes = []
+            # Recompute which hashes are still valid
+            remaining_hashes = new_hashes
+            for node in list(existing_graph.nodes()):
+                nd = existing_graph.nodes[node]
+                source_chunks = nd.get("source_chunks", [])
+                # Remove source chunks that no longer exist
+                nd["source_chunks"] = [sc for sc in source_chunks if isinstance(sc, dict) and sc.get("hash", "") in remaining_hashes]
+                if not nd["source_chunks"]:
+                    stale_nodes.append(node)
+
+            for node in stale_nodes:
+                existing_graph.remove_node(node)
+
+            print(f"[GraphRAG] Removed {len(stale_nodes)} stale entities, graph now has {existing_graph.number_of_nodes()} nodes")
+
+        # 3. Extract entities/relationships from new chunks only
+        new_chunks = [(new_chunk_hashes[h], {}) for h in added_hashes if h in new_chunk_hashes]
+        
+        all_new_entities: dict[str, dict] = {}
+        all_new_relationships: list[dict] = []
+
+        if new_chunks:
+            total_new = len(new_chunks)
+            num_batches = (total_new + batch_size - 1) // batch_size
+            set_graph_progress(kb_id, 0, num_batches + 3, "extraction", f"Extracting from {total_new} new chunks...")
+
+            for batch_idx, batch_start in enumerate(range(0, total_new, batch_size)):
+                batch_end = min(batch_start + batch_size, total_new)
+                batch = new_chunks[batch_start:batch_end]
+                
+                entities, relationships = await extract_entities_and_relationships_batch(
+                    batch, model=extraction_model, provider_id=extraction_provider, schema=schema
+                )
+
+                for e in entities:
+                    norm = _normalize_entity_name(e.get("name", ""))
+                    if not norm:
+                        continue
+                    entity_data = {
+                        "name": e.get("name", "").strip(),
+                        "type": e.get("type", "OTHER"),
+                        "description": e.get("description", ""),
+                        "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}", "hash": _chunk_hash(batch[0][0] if batch else "")}],
+                    }
+                    _resolve_entity(norm, entity_data, all_new_entities)
+
+                for r in relationships:
+                    src = _normalize_entity_name(r.get("source", ""))
+                    tgt = _normalize_entity_name(r.get("target", ""))
+                    if not src or not tgt:
+                        continue
+                    all_new_relationships.append({
+                        "source": src,
+                        "relation": r.get("relation", "related_to"),
+                        "target": tgt,
+                        "description": r.get("description", ""),
+                        "source_chunks": [{"batch": f"{batch_start + 1}-{batch_end}"}],
+                    })
+
+                await asyncio.sleep(0.2)
+
+        # 4. Merge new entities into existing graph
+        merged_entities = 0
+        merged_relationships = 0
+        added_entities = 0
+
+        # Build entity map from existing graph for fuzzy resolution
+        existing_entity_map = {}
+        for node in existing_graph.nodes():
+            nd = existing_graph.nodes[node]
+            existing_entity_map[node] = dict(nd)
+
+        for norm, e_data in all_new_entities.items():
+            resolved = _resolve_entity(norm, e_data, existing_entity_map)
+            resolved_norm = _normalize_entity_name(resolved.get("name", norm))
+            
+            if resolved_norm not in existing_graph:
+                existing_graph.add_node(
+                    resolved_norm,
+                    name=resolved.get("name", e_data["name"]),
+                    type=resolved.get("type", e_data.get("type", "OTHER")),
+                    description=resolved.get("description", ""),
+                    source_chunks=resolved.get("source_chunks", []),
+                )
+                added_entities += 1
+            else:
+                # Update existing node attributes
+                nd = existing_graph.nodes[resolved_norm]
+                if len(resolved.get("description", "")) > len(nd.get("description", "")):
+                    nd["description"] = resolved["description"]
+                for sc in resolved.get("source_chunks", []):
+                    if sc not in nd.get("source_chunks", []):
+                        nd.setdefault("source_chunks", []).append(sc)
+                merged_entities += 1
+
+        for r in all_new_relationships:
+            src_norm = _normalize_entity_name(r["source"])
+            tgt_norm = _normalize_entity_name(r["target"])
+            # Resolve through entity map
+            src_resolved = src_norm
+            tgt_resolved = tgt_norm
+            for existing_norm in existing_entity_map:
+                if _entity_similarity_fuzzy(src_norm, existing_norm) >= 0.8:
+                    src_resolved = existing_norm
+                    break
+            for existing_norm in existing_entity_map:
+                if _entity_similarity_fuzzy(tgt_norm, existing_norm) >= 0.8:
+                    tgt_resolved = existing_norm
+                    break
+
+            if src_resolved in existing_graph and tgt_resolved in existing_graph:
+                # Check if this edge already exists
+                already_exists = False
+                if existing_graph.has_edge(src_resolved, tgt_resolved):
+                    for key in existing_graph[src_resolved][tgt_resolved]:
+                        edge = existing_graph[src_resolved][tgt_resolved][key]
+                        if edge.get("relation") == r["relation"]:
+                            already_exists = True
+                            break
+                if not already_exists:
+                    existing_graph.add_edge(
+                        src_resolved, tgt_resolved,
+                        relation=r["relation"],
+                        description=r.get("description", ""),
+                        source_chunks=r.get("source_chunks", []),
+                    )
+                    merged_relationships += 1
+
+        print(f"[GraphRAG] Merged: {added_entities} new entities, {merged_entities} updated entities, {merged_relationships} new relationships")
+
+        # 5. Re-run community detection on the updated graph
+        set_graph_progress(kb_id, len(all_new_relationships), len(all_new_relationships) + 3, "community_detection", "Recomputing communities...")
+        try:
+            try:
+                import community as community_louvain
+                partition = community_louvain.best_partition(existing_graph.to_undirected())
+                communities: dict[int, set] = {}
+                for node, comm_id in partition.items():
+                    communities.setdefault(comm_id, set()).add(node)
+            except ImportError:
+                communities_iter = nx.algorithms.community.greedy_modularity_communities(existing_graph.to_undirected())
+                communities = {i: set(c) for i, c in enumerate(communities_iter)}
+        except Exception as e:
+            print(f"Community detection error: {e}")
+            communities = {0: set(existing_graph.nodes())}
+
+        # 6. Determine which communities changed and re-summarize only those
+        old_community_map = {}
+        if existing_communities:
+            for c in existing_communities:
+                old_community_map[c.get("id", -1)] = set(c.get("entities", []))
+
+        new_community_ids = set()
+        for cid, nodes in communities.items():
+            if len(nodes) < 2:
+                continue
+            # Check if this community's composition changed
+            if cid not in old_community_map or old_community_map[cid] != nodes:
+                new_community_ids.add(cid)
+
+        print(f"[GraphRAG] {len(communities)} communities total, {len(new_community_ids)} changed, re-summarizing those")
+
+        communities_to_summarize = {cid: nodes for cid, nodes in communities.items() if cid in new_community_ids and len(nodes) >= 2}
+        if not communities_to_summarize:
+            # Even if no communities changed, we need a valid summary for each
+            communities_to_summarize = {cid: nodes for cid, nodes in communities.items() if len(nodes) >= 2}
+
+        # Reuse existing summaries for unchanged communities
+        reused_summaries = {}
+        if existing_communities:
+            for c in existing_communities:
+                cid = c.get("id", -1)
+                if cid not in new_community_ids and cid in communities:
+                    reused_summaries[cid] = c
+
+        # Summarize only changed communities
+        summary_tasks = []
+        for comm_id, nodes in communities_to_summarize.items():
+            summary_tasks.append(
+                _summarize_single_community(comm_id, nodes, existing_graph, extraction_model, extraction_provider)
+            )
+
+        community_summaries = []
+        MAX_PARALLEL = 5
+        for i in range(0, len(summary_tasks), MAX_PARALLEL):
+            batch_tasks = summary_tasks[i:i + MAX_PARALLEL]
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            for res in batch_results:
+                if isinstance(res, Exception):
+                    print(f"[GraphRAG] Community summary task failed: {res}")
+                    continue
+                community_summaries.append(res)
+
+        # Merge reused and new summaries
+        final_summaries = list(community_summaries)
+        for cid, summary in reused_summaries.items():
+            final_summaries.append(summary)
+
+        set_graph_progress(kb_id, len(all_new_relationships) + 1, len(all_new_relationships) + 3, "persisting", "Saving updated graph...")
+
+        # 7. Persist
+        graph_dir = _kb_graph_dir(kb_id)
+        graph_dir.mkdir(parents=True, exist_ok=True)
+
+        graph_data = nx.node_link_data(existing_graph)
+        _graph_path(kb_id).write_text(json.dumps(graph_data, indent=2))
+        _communities_path(kb_id).write_text(json.dumps(final_summaries, indent=2))
+
+        # Re-embed all community summaries
+        summary_texts = [c["summary"] for c in final_summaries if c.get("summary")]
+        summary_embeddings = []
+        if summary_texts:
+            print(f"[GraphRAG] Re-embedding {len(summary_texts)} community summaries...")
+            try:
+                embeddings = ProviderEmbeddings(provider_id=extraction_provider, model=None)
+                summary_embeddings = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, embeddings.embed_documents, summary_texts),
+                    timeout=30.0
+                )
+                print(f"[GraphRAG] Embedded {len(summary_embeddings)} summaries.")
+            except asyncio.TimeoutError:
+                print("[GraphRAG] Community embedding timed out after 30s, skipping.")
+            except Exception as e:
+                print(f"Community embedding error: {e}")
+
+        index = {
+            "status": "ready",
+            "entity_count": existing_graph.number_of_nodes(),
+            "relationship_count": existing_graph.number_of_edges(),
+            "community_count": len(final_summaries),
+            "chunk_hashes": list(new_chunk_hashes.keys()),
+            "build_timestamp": __import__("time").time(),
+            "incremental_update": True,
+            "changes": {
+                "chunks_added": len(added_hashes),
+                "chunks_removed": len(removed_hashes),
+                "entities_added": added_entities,
+                "entities_merged": merged_entities,
+                "relationships_added": merged_relationships,
+                "communities_changed": len(new_community_ids),
+            },
+            "community_summaries": [
+                {
+                    "id": c["id"],
+                    "summary": c.get("summary", ""),
+                    "entity_count": c.get("entity_count", 0),
+                    "embedding": summary_embeddings[i] if i < len(summary_embeddings) else None,
+                }
+                for i, c in enumerate(final_summaries)
+            ],
+        }
+        _index_path(kb_id).write_text(json.dumps(index, indent=2))
+
+        _try_save_to_neo4j(kb_id, existing_graph, index, final_summaries)
+
+        msg = f"Graph updated! {existing_graph.number_of_nodes()} entities, {existing_graph.number_of_edges()} edges, {len(final_summaries)} communities. Changes: +{len(added_hashes)} chunks, -{len(removed_hashes)} chunks"
+        print(f"[GraphRAG] {msg}")
+        set_graph_progress(kb_id, 1, 1, "ready", msg)
+        set_graph_status(kb_id, "ready")
+
+        return {
+            "status": "ready",
+            "entities": existing_graph.number_of_nodes(),
+            "relationships": existing_graph.number_of_edges(),
+            "communities": len(final_summaries),
+            "changes": {
+                "chunks_added": len(added_hashes),
+                "chunks_removed": len(removed_hashes),
+                "entities_added": added_entities,
+                "entities_merged": merged_entities,
+                "relationships_added": merged_relationships,
+            },
+        }
+    except Exception as e:
+        err_msg = f"Graph update failed: {e}"
         print(f"[GraphRAG] {err_msg}")
         import traceback
         traceback.print_exc()
@@ -836,52 +1298,34 @@ async def _local_search(
     return ["\n\n".join(context_parts)] if context_parts else []
 
 
-async def _hybrid_search(
-    graph: Any,
-    query: str,
-    kb_id: str,
-    max_depth: int,
-    top_k: int,
-    provider_id: str | None = None,
-    embedding_model: str | None = None,
-) -> list[str]:
-    """Hybrid search: vector search on chunks + graph BFS traversal.
-
-    Inspired by Neo4j VectorCypherRetriever pattern:
-    1. Vector search finds relevant starting chunks
-    2. Entities from those chunks become graph starting points
-    3. BFS traversal gathers connected entities and relationships
-    4. Returns both chunk texts and graph context
-    """
-    # 1. Vector search on chunks
-    chunk_texts: list[str] = []
+async def _vector_search_chunks(kb_id: str, query: str, top_k: int, provider_id: str | None, embedding_model: str | None) -> list[str]:
     try:
-        chunk_texts = await retrieve_relevant_chunks(
-            kb_id=kb_id,
-            query_text=query,
-            n_results=top_k,
-            provider_id=provider_id,
-            embedding_model=embedding_model,
-            hybrid=True,
-            rerank=True,
+        return await retrieve_relevant_chunks(
+            kb_id=kb_id, query_text=query, n_results=top_k,
+            provider_id=provider_id, embedding_model=embedding_model,
+            hybrid=True, rerank=True,
         )
     except Exception as e:
         print(f"Hybrid vector search error: {e}")
+        return []
 
-    # 2. Find entities mentioned in retrieved chunks
+
+def _find_chunk_entities(graph: Any, chunk_texts: list[str]) -> set[str]:
     chunk_entities: set[str] = set()
-    if chunk_texts:
-        for node in graph.nodes():
-            nd = graph.nodes[node]
-            display_name = nd.get("name", node).lower()
-            for chunk in chunk_texts:
-                chunk_lower = chunk.lower()
-                # Check if entity name appears in chunk (word boundary heuristic)
-                if display_name in chunk_lower and len(display_name) > 2:
-                    chunk_entities.add(node)
-                    break
+    if not chunk_texts:
+        return chunk_entities
+    for node in graph.nodes():
+        display_name = graph.nodes[node].get("name", node).lower()
+        if len(display_name) <= 2:
+            continue
+        for chunk in chunk_texts:
+            if display_name in chunk.lower():
+                chunk_entities.add(node)
+                break
+    return chunk_entities
 
-    # 3. Also extract entities from query itself
+
+async def _extract_query_entities(graph: Any, query: str) -> set[str]:
     query_entities = set()
     try:
         cfg = get_config()
@@ -898,27 +1342,19 @@ async def _hybrid_search(
     except Exception as e:
         print(f"Hybrid query entity extraction error: {e}")
 
-    # Fallback keyword match
     if not query_entities:
         query_words = set(query.lower().split())
         for node in graph.nodes():
-            nd = graph.nodes[node]
-            display_name = nd.get("name", node).lower()
+            display_name = graph.nodes[node].get("name", node).lower()
             if any(w in display_name for w in query_words if len(w) > 3):
                 query_entities.add(node)
 
-    # Combine starting entities
-    starting_entities = chunk_entities | query_entities
+    return query_entities
 
-    if not starting_entities:
-        # If no graph entities found but we have chunks, return chunks only
-        if chunk_texts:
-            return ["Relevant Document Chunks:\n\n" + "\n\n---\n\n".join(chunk_texts)]
-        return []
 
-    # 4. BFS traversal from starting entities
-    visited_entities = set()
-    visited_edges = []
+def _bfs_traverse(graph: Any, starting_entities: set[str], max_depth: int) -> tuple[set[str], list[dict]]:
+    visited_entities: set[str] = set()
+    visited_edges: list[dict] = []
 
     for start in starting_entities:
         if start not in graph:
@@ -954,16 +1390,21 @@ async def _hybrid_search(
             print(f"Hybrid BFS error: {e}")
             continue
 
-    # Deduplicate edges
-    seen_edges = set()
-    unique_edges = []
-    for e in visited_edges:
-        key = (e["source"], e["relation"], e["target"])
-        if key not in seen_edges:
-            seen_edges.add(key)
-            unique_edges.append(e)
+    return visited_entities, visited_edges
 
-    # Build context
+
+def _deduplicate_edges(edges: list[dict]) -> list[dict]:
+    seen = set()
+    unique = []
+    for e in edges:
+        key = (e["source"], e["relation"], e["target"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+    return unique
+
+
+def _build_hybrid_context(chunk_texts: list[str], graph: Any, visited_entities: set[str], unique_edges: list[dict], top_k: int) -> list[str]:
     context_parts = []
 
     if chunk_texts:
@@ -974,18 +1415,48 @@ async def _hybrid_search(
         if node in graph:
             nd = graph.nodes[node]
             entity_lines.append(f"- {nd.get('name', node)} ({nd.get('type', 'OTHER')}): {nd.get('description', '')}")
-
     if entity_lines:
         context_parts.append("Related Entities:\n" + "\n".join(entity_lines))
 
     edge_lines = []
     for e in unique_edges[:top_k * 5]:
         edge_lines.append(f"- {e['source']} --[{e['relation']}]--> {e['target']}: {e['description']}")
-
     if edge_lines:
         context_parts.append("Relationships:\n" + "\n".join(edge_lines))
 
     return ["\n\n".join(context_parts)] if context_parts else []
+
+
+async def _hybrid_search(
+    graph: Any,
+    query: str,
+    kb_id: str,
+    max_depth: int,
+    top_k: int,
+    provider_id: str | None = None,
+    embedding_model: str | None = None,
+) -> list[str]:
+    """Hybrid search: vector search on chunks + graph BFS traversal.
+
+    Inspired by Neo4j VectorCypherRetriever pattern:
+    1. Vector search finds relevant starting chunks
+    2. Entities from those chunks become graph starting points
+    3. BFS traversal gathers connected entities and relationships
+    4. Returns both chunk texts and graph context
+    """
+    chunk_texts = await _vector_search_chunks(kb_id, query, top_k, provider_id, embedding_model)
+    chunk_entities = _find_chunk_entities(graph, chunk_texts)
+    query_entities = await _extract_query_entities(graph, query)
+    starting_entities = chunk_entities | query_entities
+
+    if not starting_entities:
+        if chunk_texts:
+            return ["Relevant Document Chunks:\n\n" + "\n\n---\n\n".join(chunk_texts)]
+        return []
+
+    visited_entities, visited_edges = _bfs_traverse(graph, starting_entities, max_depth)
+    unique_edges = _deduplicate_edges(visited_edges)
+    return _build_hybrid_context(chunk_texts, graph, visited_entities, unique_edges, top_k)
 
 
 async def _path_search(

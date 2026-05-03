@@ -41,8 +41,8 @@ const Features = () => {
     { name: 'Documents', color: '#6366f1', desc: 'PDF, DOC, TXT files. Text extracted, chunked, and embedded for retrieval.' },
     { name: 'Web Search', color: '#10b981', desc: 'Search results as a knowledge source. Scraped and chunked automatically.' },
     { name: 'API Sources', color: '#f59e0b', desc: 'External API data integration. Configurable endpoint, headers, and refresh.' },
-    { name: 'Vector DB', color: '#ec4899', desc: 'Connect to Chroma, Qdrant, or Pinecone collections.' },
-    { name: 'GraphRAG', color: '#f97316', desc: 'Graph-based RAG with entity extraction, relationship mapping, and community summaries.' },
+    { name: 'Vector DB', color: '#ec4899', desc: 'Connect to Chroma, Qdrant, or Pinecone collections for classic vector search.' },
+    { name: 'GraphRAG', color: '#f97316', desc: 'Graph-based RAG with entity extraction, relationship mapping, and community summaries. Local, global, hybrid, path, and neighborhood search modes.' },
   ]
 
   return (

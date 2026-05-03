@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useTheme } from '../hooks/useTheme'
 
-const Header = ({ title, models = [], currentModel, currentProviderId, onModelSelect }) => {
+const Header = ({ title, models = [], currentModel, currentProviderId, onModelSelect, cioProcessing }) => {
   const { theme, toggleTheme } = useTheme()
   const [showModels, setShowModels] = useState(false)
   const dropdownRef = useRef(null)
@@ -95,6 +95,17 @@ const Header = ({ title, models = [], currentModel, currentProviderId, onModelSe
           )}
         </div>
       </div>
+
+      {/* CIO Agent Processing Indicator */}
+      {cioProcessing && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/30">
+          <div className="relative">
+            <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse" />
+            <div className="absolute inset-0 w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-ping opacity-40" />
+          </div>
+          <span className="text-xs font-semibold text-[var(--accent-primary)]">CIO Analyzing</span>
+        </div>
+      )}
 
       {/* Theme Toggle */}
       <button 

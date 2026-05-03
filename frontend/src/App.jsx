@@ -124,6 +124,7 @@ function AppInner() {
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+  const [cioProcessing, setCioProcessing] = useState(false)
   const messagesEndRef = useRef(null)
   const chatInputRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -709,6 +710,7 @@ function AppInner() {
           currentModel={currentModel}
           currentProviderId={currentProviderId}
           onModelSelect={updateActiveSelection}
+          cioProcessing={cioProcessing}
         />
 
         {activePage === 'search' ? (
@@ -742,6 +744,8 @@ function AppInner() {
             onSave={saveConfig}
             models={models}
             onRefreshModels={refreshModels}
+            cioProcessing={cioProcessing}
+            setCioProcessing={setCioProcessing}
           />
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">

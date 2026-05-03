@@ -958,8 +958,8 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
     }
     try {
       const url = force
-        ? `/api/knowledge/${kb.id}/build-graph?force=true`
-        : `/api/knowledge/${kb.id}/build-graph`
+        ? `/api/knowledge/${kb.id}/build-graph?force=true&incremental=false`
+        : `/api/knowledge/${kb.id}/build-graph?incremental=true`
       const resp = await fetch(url, { method: 'POST' })
       const data = await resp.json()
       if (data.error) {
