@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Button, TextField, Switch, FormControlLabel, FormControl, Select,
   MenuItem, InputLabel, Typography, Paper, Divider, Card, CardContent,
@@ -10,7 +10,7 @@ import {
   Check, Close, Cloud, Terminal, Key, Settings, AutoAwesome, Search,
   Code, Extension, Visibility, VisibilityOff, Refresh, Star, StarBorder,
   SmartToy, Language, Hub, Tune, Science, Info, Public, CreateNewFolder,
-  NoteAdd, AddCircle, RemoveCircle, Stop, Download, Undo, CheckBoxOutlineBlank, CheckBox, IndeterminateCheckBox, Assessment, History
+  NoteAdd, AddCircle, RemoveCircle, CheckBox
 } from '@mui/icons-material';
 
 const PROVIDER_TYPES = [
@@ -19,7 +19,7 @@ const PROVIDER_TYPES = [
   { id: 'anthropic', name: 'Anthropic', icon: '🐜', defaultUrl: '', description: 'Claude via Anthropic API', color: '#ef4444' },
 ];
 
-const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcessing, setCioProcessing }) => {
+const SettingsPage = ({ config, onSave, models = [], onRefreshModels }) => {
   const [activeTab, setActiveTab] = useState('connections');
   const [view, setView] = useState('list');
   const [editingProvider, setEditingProvider] = useState(null);
@@ -27,436 +27,6 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
   const [showApiKey, setShowApiKey] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-
-  // CIO Agent state
-  const [cioEnabled, setCioEnabled] = useState(false);
-  const [cioAutoScan, setCioAutoScan] = useState(true);
-  const [cioIncludeTests, setCioIncludeTests] = useState(false);
-  const [cioIncludeUnderstanding, setCioIncludeUnderstanding] = useState(true);
-  const [cioExcludeDirs, setCioExcludeDirs] = useState('');
-  const [cioExcludeFiles, setCioExcludeFiles] = useState('');
-  const [cioTargetDir, setCioTargetDir] = useState('');
-  const [cioSuggestions, setCioSuggestions] = useState([]);
-  const [cioLoading, setCioLoading] = useState(false);
-  const [cioAnalyzing, setCioAnalyzing] = useState(false);
-  const [cioAnalysisInProgress, setCioAnalysisInProgress] = useState(false);
-  const [cioFilter, setCioFilter] = useState('all');
-  const [cioInsightType, setCioInsightType] = useState('all');
-  const [cioPage, setCioPage] = useState(0);
-  const CIO_PAGE_SIZE = 20;
-  const [cioLastScan, setCioLastScan] = useState(null);
-  const [cioProgress, setCioProgress] = useState('');
-  const [localProcessing, setLocalProcessing] = useState(false);
-  const [cioStats, setCioStats] = useState(null);
-  const [cioPriorityFilter, setCioPriorityFilter] = useState('all');
-  const [cioSearch, setCioSearch] = useState('');
-  const [cioSelectedIds, setCioSelectedIds] = useState(new Set());
-  const [cioScanHistory, setCioScanHistory] = useState([]);
-  const [cioShowHistory, setCioShowHistory] = useState(false);
-  const [cioShowStats, setCioShowStats] = useState(false);
-  const [cioSortBy, setCioSortBy] = useState('timestamp');
-
-  // Refs for CIO Agent streaming control
-  const cioEventSourceRef = useRef(null);
-  const cioStopRequestedRef = useRef(false);
-
-  // Use passed-in processing state from parent, fall back to local if not provided
-  const isProcessing = cioProcessing !== undefined ? cioProcessing : localProcessing;
-  const setProcessing = setCioProcessing !== undefined ? setCioProcessing : setLocalProcessing;
-
-  const handleCIOToggle = async (e) => {
-    const enabled = e.target.checked;
-    setCioEnabled(enabled);
-    setCioPage(0); // Reset page when toggling
-    try {
-      await fetch('/api/cio-agent/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, auto_scan: cioAutoScan })
-      });
-      // Also save to config for persistence
-      onSave({ cio_agent_enabled: enabled });
-      if (enabled && cioAutoScan) {
-        handleCIOAnalyze();
-      }
-    } catch (err) {
-      console.error('Failed to toggle CIO Agent:', err);
-    }
-  };
-
-  const handleCIOAnalyze = async () => {
-    setCioAnalyzing(true);
-    setCioLoading(true);
-    setProcessing(true);
-    setCioProgress('Starting analysis...');
-    setCioSuggestions([]);
-    cioStopRequestedRef.current = false;
-    
-    try {
-      const eventSource = new EventSource('/api/cio-agent/stream');
-      cioEventSourceRef.current = eventSource;
-      
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'start') {
-            setCioProgress(data.message || 'Starting analysis...');
-          } else if (data.type === 'progress') {
-            setCioProgress(data.message);
-          } else if (data.type === 'suggestion') {
-            // Skip meta/status suggestions in the UI list
-            if (data.suggestion && data.suggestion.category === 'meta') {
-              setCioProgress(data.suggestion.description || 'Processing...');
-              return;
-            }
-            setCioSuggestions(prev => {
-              const newCount = prev.length + 1;
-              setCioProgress(`Found ${newCount} suggestions...`);
-              // Once we get first suggestion, hide spinner and show list
-              if (prev.length === 0) {
-                setCioLoading(false);
-              }
-              return [...prev, data.suggestion];
-            });
-          } else if (data.type === 'complete') {
-            setCioProgress(`Analysis complete! Found ${data.count} suggestions.`);
-            setCioAnalyzing(false);
-            setCioLoading(false);
-            setTimeout(() => {
-              setProcessing(false);
-              setCioProgress('');
-            }, 3000);
-            eventSource.close();
-            cioEventSourceRef.current = null;
-          } else if (data.type === 'cancelled') {
-            setCioProgress(`Analysis cancelled. Found ${data.count} suggestions before stopping.`);
-            setCioAnalyzing(false);
-            setCioLoading(false);
-            setProcessing(false);
-            eventSource.close();
-            cioEventSourceRef.current = null;
-            fetch('/api/cio-agent/suggestions').then(r => r.json()).then(d => setCioSuggestions(d.suggestions || []));
-          } else if (data.type === 'error') {
-            setCioProgress(`Error: ${data.message}`);
-            setCioAnalyzing(false);
-            setCioLoading(false);
-            setProcessing(false);
-            eventSource.close();
-            cioEventSourceRef.current = null;
-            setSnackbar({ open: true, message: data.message, severity: 'error' });
-          }
-        } catch (err) {
-          console.error('Error parsing SSE data:', err);
-        }
-      };
-      
-      eventSource.onerror = (err) => {
-        console.error('SSE error:', err);
-        eventSource.close();
-        cioEventSourceRef.current = null;
-        // Only fallback if stop was not intentionally requested
-        if (!cioStopRequestedRef.current) {
-          setProcessing(false);
-          setCioProgress('Analysis failed');
-          handleCIOAnalyzeFallback();
-        }
-      };
-      
-    } catch (err) {
-      console.error('Failed to start analysis:', err);
-      setProcessing(false);
-    }
-  };
-
-  const handleCIOAnalyzeFallback = async () => {
-    try {
-      setCioProgress('Running analysis...');
-      const response = await fetch('/api/cio-agent/analyze-and-save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ include_tests: cioIncludeTests })
-      });
-      const data = await response.json();
-      if (data.count !== undefined) {
-        setCioSuggestions(data.suggestions || []);
-        setCioProgress(`Analysis complete! Found ${data.count} suggestions.`);
-      }
-    } catch (err) {
-      console.error('Failed to analyze:', err);
-      setCioProgress('Analysis failed');
-    } finally {
-      setCioAnalyzing(false);
-      setCioLoading(false);
-      setTimeout(() => setProcessing(false), 3000);
-    }
-  };
-
-  const handleDismissSuggestion = async (id) => {
-    try {
-      await fetch(`/api/cio-agent/suggestion/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'dismissed' })
-      });
-      setCioSuggestions(prev => prev.filter(s => s.id !== id));
-    } catch (err) {
-      console.error('Failed to dismiss suggestion:', err);
-    }
-  };
-
-  const handleApplySuggestion = async (id) => {
-    try {
-      const response = await fetch(`/api/cio-agent/suggestion/${id}/apply`, { method: 'POST' });
-      if (response.ok) {
-        const data = await response.json();
-        setCioSuggestions(prev => prev.map(s => s.id === id ? { ...s, status: data.status, applied_at: new Date().toISOString() } : s));
-        setSnackbar({ open: true, message: data.message, severity: 'success' });
-      } else {
-        const errData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        setSnackbar({ open: true, message: errData.detail || `Failed to apply suggestion (${response.status})`, severity: 'error' });
-      }
-    } catch (err) {
-      console.error('Failed to apply suggestion:', err);
-      setSnackbar({ open: true, message: 'Failed to apply suggestion', severity: 'error' });
-    }
-  };
-
-  const handleAdaptSuggestion = async (id, adaptedCode) => {
-    try {
-      const response = await fetch(`/api/cio-agent/suggestion/${id}/adapt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adapted_code: adaptedCode })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCioSuggestions(prev => prev.map(s => s.id === id ? { ...s, status: 'adapted', adapted_code: adaptedCode } : s));
-        setSnackbar({ open: true, message: 'Suggestion adapted and saved', severity: 'success' });
-      } else {
-        const errData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        setSnackbar({ open: true, message: errData.detail || `Failed to adapt suggestion (${response.status})`, severity: 'error' });
-      }
-    } catch (err) {
-      console.error('Failed to adapt suggestion:', err);
-      setSnackbar({ open: true, message: 'Failed to adapt suggestion', severity: 'error' });
-    }
-  };
-
-  const handleApplyAdapted = async (id, adaptedCode) => {
-    try {
-      const response = await fetch(`/api/cio-agent/suggestion/${id}/apply-adapted`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adapted_code: adaptedCode })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCioSuggestions(prev => prev.map(s => s.id === id ? { ...s, status: 'adapted', applied_at: new Date().toISOString() } : s));
-        setSnackbar({ open: true, message: data.message, severity: 'success' });
-      } else {
-        const errData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        setSnackbar({ open: true, message: errData.detail || `Failed to apply adapted suggestion (${response.status})`, severity: 'error' });
-      }
-    } catch (err) {
-      console.error('Failed to apply adapted suggestion:', err);
-      setSnackbar({ open: true, message: 'Failed to apply suggestion', severity: 'error' });
-    }
-  };
-
-  const handleCIOStop = async () => {
-    try {
-      cioStopRequestedRef.current = true;
-      // Close the SSE connection first to prevent onerror fallback
-      if (cioEventSourceRef.current) {
-        cioEventSourceRef.current.close();
-        cioEventSourceRef.current = null;
-      }
-      const response = await fetch('/api/cio-agent/stop', { method: 'POST' });
-      const data = await response.json();
-      setCioProgress('Stopping analysis...');
-      // Immediately stop the UI state since analysis will end
-      setCioAnalyzing(false);
-      setCioLoading(false);
-      setProcessing(false);
-    } catch (err) {
-      console.error('Failed to stop analysis:', err);
-    }
-  };
-
-  const handleCIOPurge = async () => {
-    try {
-      const response = await fetch('/api/cio-agent/purge', { method: 'POST' });
-      const data = await response.json();
-      setCioSuggestions([]);
-      setCioPage(0);
-      setSnackbar({ open: true, message: data.message, severity: 'success' });
-      // Reload to get accurate count
-      const suggResponse = await fetch('/api/cio-agent/suggestions');
-      const suggData = await suggResponse.json();
-      setCioSuggestions(suggData.suggestions || []);
-    } catch (err) {
-      console.error('Failed to purge suggestions:', err);
-      setSnackbar({ open: true, message: 'Failed to purge suggestions', severity: 'error' });
-    }
-  };
-
-  const handleCIODeleteAll = async () => {
-    if (!window.confirm('Delete ALL suggestions including applied and dismissed? This cannot be undone.')) return;
-    try {
-      const response = await fetch('/api/cio-agent/suggestions?purge_all=true', { method: 'DELETE' });
-      const data = await response.json();
-      setCioSuggestions([]);
-      setCioPage(0);
-      setSnackbar({ open: true, message: data.message, severity: 'success' });
-    } catch (err) {
-      console.error('Failed to delete suggestions:', err);
-      setSnackbar({ open: true, message: 'Failed to delete suggestions', severity: 'error' });
-    }
-  };
-
-  const handleCIORevert = async (id) => {
-    try {
-      const response = await fetch(`/api/cio-agent/suggestion/${id}/revert`, { method: 'POST' });
-      if (response.ok) {
-        const data = await response.json();
-        setCioSuggestions(prev => prev.map(s => s.id === id ? { ...s, status: 'reverted' } : s));
-        setSnackbar({ open: true, message: data.message, severity: 'success' });
-      } else {
-        const errData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        setSnackbar({ open: true, message: errData.detail || 'Failed to revert', severity: 'error' });
-      }
-    } catch (err) {
-      setSnackbar({ open: true, message: 'Failed to revert suggestion', severity: 'error' });
-    }
-  };
-
-  const handleCIOBatchDismiss = async () => {
-    if (cioSelectedIds.size === 0) return;
-    try {
-      const response = await fetch('/api/cio-agent/suggestions/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestion_ids: Array.from(cioSelectedIds), status: 'dismissed' })
-      });
-      const data = await response.json();
-      setCioSuggestions(prev => prev.map(s => cioSelectedIds.has(s.id) ? { ...s, status: 'dismissed' } : s));
-      setCioSelectedIds(new Set());
-      setSnackbar({ open: true, message: `Dismissed ${data.updated} suggestions`, severity: 'success' });
-    } catch (err) {
-      setSnackbar({ open: true, message: 'Batch dismiss failed', severity: 'error' });
-    }
-  };
-
-  const handleCIOBatchApply = async () => {
-    if (cioSelectedIds.size === 0) return;
-    try {
-      const response = await fetch('/api/cio-agent/suggestions/batch-apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestion_ids: Array.from(cioSelectedIds) })
-      });
-      const data = await response.json();
-      setCioSuggestions(prev => prev.map(s => cioSelectedIds.has(s.id) ? { ...s, status: 'applied' } : s));
-      setCioSelectedIds(new Set());
-      setSnackbar({ open: true, message: `Applied ${data.applied} suggestions`, severity: 'success' });
-    } catch (err) {
-      setSnackbar({ open: true, message: 'Batch apply failed', severity: 'error' });
-    }
-  };
-
-  const handleCIOExport = async (format = 'json') => {
-    try {
-      const response = await fetch(`/api/cio-agent/suggestions/export?format=${format}`);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cio_suggestions.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setSnackbar({ open: true, message: `Exported as ${format.toUpperCase()}`, severity: 'success' });
-    } catch (err) {
-      setSnackbar({ open: true, message: 'Export failed', severity: 'error' });
-    }
-  };
-
-  const handleCIOLoadStats = async () => {
-    try {
-      const response = await fetch('/api/cio-agent/stats');
-      const data = await response.json();
-      setCioStats(data);
-      setCioShowStats(true);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-    }
-  };
-
-  const handleCIOLoadHistory = async () => {
-    try {
-      const response = await fetch('/api/cio-agent/scan-history');
-      const data = await response.json();
-      setCioScanHistory(data.scans || []);
-      setCioShowHistory(true);
-    } catch (err) {
-      console.error('Failed to load scan history:', err);
-    }
-  };
-
-  const handleCIOSelectAll = (filtered) => {
-    const pendingIds = filtered.filter(s => s.status === 'pending').map(s => s.id);
-    if (cioSelectedIds.size >= pendingIds.length && pendingIds.every(id => cioSelectedIds.has(id))) {
-      setCioSelectedIds(new Set());
-    } else {
-      setCioSelectedIds(new Set(pendingIds));
-    }
-  };
-
-  const handleCIOToggleSelect = (id) => {
-    setCioSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    // Load CIO Agent status and suggestions on mount
-    const loadCIOStatus = async () => {
-      try {
-        const response = await fetch('/api/cio-agent/status');
-        const data = await response.json();
-        setCioEnabled(data.enabled || false);
-        setCioAutoScan(data.auto_scan !== false);
-        setCioIncludeTests(data.include_tests || false);
-        setCioLastScan(data.last_scan);
-        const defaultDirs = ['node_modules', '__pycache__', '.git', 'venv', 'env', '.venv', '.env', 'dist', 'build', 'backup', '.vscode', '.pytest_cache', '.claude', '.mypy_cache', '.ruff_cache', '.tox', 'coverage', '.coverage', '.copilot', '.idea', '.next', 'out', '.nuxt', '.output'];
-        const defaultFiles = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock', 'vite.config.js', 'vite.config.ts', 'tailwind.config.js', 'postcss.config.js', 'jest.config.js', 'eslint.config.js'];
-        const loadedDirs = Array.isArray(data.exclude_dirs) && data.exclude_dirs.length > 0 ? data.exclude_dirs : defaultDirs;
-        const loadedFiles = Array.isArray(data.exclude_files) && data.exclude_files.length > 0 ? data.exclude_files : defaultFiles;
-        setCioExcludeDirs(loadedDirs.join(', '));
-        setCioExcludeFiles(loadedFiles.join(', '));
-        setCioTargetDir(data.target_dir || '');
-        setCioAnalysisInProgress(data.analysis_in_progress || false);
-        setProcessing(data.last_scan ? false : true); // Show indicator if never scanned
-        
-        // Load existing suggestions
-        const suggResponse = await fetch('/api/cio-agent/suggestions');
-        const suggData = await suggResponse.json();
-        setCioSuggestions(suggData.suggestions || []);
-      } catch (err) {
-        console.error('Failed to load CIO Agent status:', err);
-      }
-    };
-    loadCIOStatus();
-
-    return () => {
-      if (cioEventSourceRef.current) {
-        cioEventSourceRef.current.close();
-        cioEventSourceRef.current = null;
-      }
-    };
-  }, []);
 
   const [localPrefs, setLocalPrefs] = useState({
     followup_auto_generate: true, followup_keep_in_chat: false, followup_insert_to_input: false,
@@ -474,7 +44,6 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
     { id: 'reasoning', label: 'Reasoning', icon: Psychology, description: 'Configure thinking models' },
     { id: 'retrieval', label: 'Retrieval', icon: Storage, description: 'RAG and knowledge settings' },
     { id: 'websearch', label: 'Web Search', icon: Public, description: 'Agentic web search configuration' },
-    { id: 'cioagent', label: 'CIO Agent', icon: SmartToy, description: 'AI-powered code analysis and suggestions' },
   ];
 
   useEffect(() => {
@@ -1002,7 +571,7 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                     </SettingSection>
 
                     <SettingSection title="Ollama Integration" description="Specific settings for local Ollama instances" icon={Terminal}>
-                      <SettingRow label="Local Think Tags" description="Explicitly support <think> tags used by models like DeepSeek" divider={false}>
+                      <SettingRow label="Local Think Tags" description="Explicitly support {'<think>'} tags used by models like DeepSeek" divider={false}>
                         <Switch 
                           checked={localPrefs.ollama_think} 
                           onChange={(e) => { 
@@ -1197,637 +766,23 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                     </SettingSection>
                   </>
                 )}
-
-                {activeTab === 'cioagent' && (
-                  <>
-                    <SettingSection 
-                      title="CIO Agent" 
-                      description={cioProcessing ? `\u26a1 ${cioProgress}` : cioLastScan ? `Last scan: ${new Date(cioLastScan).toLocaleString()}` : "AI-powered code analysis and improvement suggestions"}
-                      icon={SmartToy}
-                      action={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          {cioProcessing && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Box sx={{ 
-                                width: 8, height: 8, borderRadius: '50%', 
-                                bgcolor: 'var(--accent-primary)',
-                                animation: 'pulse 1.5s ease-in-out infinite'
-                              }} />
-                              <Typography variant="caption" sx={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
-                                Processing
-                              </Typography>
-                            </Box>
-                          )}
-                          <Button 
-                            variant="contained" 
-                            startIcon={cioProcessing ? <CircularProgress size={16} color="inherit" /> : <AutoAwesome />} 
-                            onClick={handleCIOAnalyze}
-                            disabled={cioProcessing || !cioEnabled}
-                            sx={{ borderRadius: 'var(--radius-sm)', background: 'var(--accent-primary)', color: 'var(--bg)', fontWeight: 600 }}
-                          >
-                            {cioProcessing ? 'Analyzing...' : 'Run Analysis'}
-                          </Button>
-                          {cioProcessing && (
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              startIcon={<Stop fontSize="small" />}
-                              onClick={handleCIOStop}
-                              sx={{ borderRadius: 'var(--radius-sm)' }}
-                            >
-                              Stop
-                            </Button>
-                          )}
-                          <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
-                            <Tooltip title="Statistics dashboard">
-                              <IconButton size="small" onClick={handleCIOLoadStats} sx={{ color: 'var(--text-secondary)' }}>
-                                <Assessment fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Scan history">
-                              <IconButton size="small" onClick={handleCIOLoadHistory} sx={{ color: 'var(--text-secondary)' }}>
-                                <History fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Export suggestions">
-                              <IconButton size="small" onClick={() => handleCIOExport('json')} sx={{ color: 'var(--text-secondary)' }}>
-                                <Download fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Purge pending suggestions">
-                              <IconButton size="small" onClick={handleCIOPurge} sx={{ color: 'var(--text-secondary)' }}>
-                                <Delete fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete all suggestions">
-                              <IconButton size="small" onClick={handleCIODeleteAll} sx={{ color: 'var(--error)' }}>
-                                <Delete fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        </Box>
-                      }
-                    >
-                      <SettingRow label="Enable CIO Agent" description="Activate AI-powered code analysis and suggestions">
-                        <Switch
-                          checked={cioEnabled}
-                          onChange={handleCIOToggle}
-                        />
-                      </SettingRow>
-                      <SettingRow label="Auto-scan on Enable" description="Automatically analyze code when agent is enabled">
-                        <Switch
-                          checked={cioAutoScan}
-                          onChange={(e) => {
-                            setCioAutoScan(e.target.checked);
-                            onSave({ cio_agent_auto_scan: e.target.checked });
-                          }}
-                        />
-                      </SettingRow>
-                       <SettingRow label="Include Test Files" description="Include test files in code analysis">
-                         <Switch
-                           checked={cioIncludeTests}
-                           onChange={(e) => {
-                             setCioIncludeTests(e.target.checked);
-                             onSave({ cio_agent_include_tests: e.target.checked });
-                           }}
-                         />
-                       </SettingRow>
-                       <SettingRow label="Architecture Understanding" description="Include architectural insights: feature maps, dependency analysis, design patterns, and data flows">
-                         <Switch
-                           checked={cioIncludeUnderstanding}
-                           onChange={(e) => {
-                             setCioIncludeUnderstanding(e.target.checked);
-                             fetch('/api/cio-agent/toggle', {
-                               method: 'POST',
-                               headers: { 'Content-Type': 'application/json' },
-                               body: JSON.stringify({ enabled: cioEnabled, include_understanding: e.target.checked })
-                             }).catch(() => {});
-                             onSave({ cio_agent_include_understanding: e.target.checked });
-                           }}
-                         />
-                       </SettingRow>
-                       {cioProgress && (
-                        <Box sx={{ mt: 2, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--accent-subtle)', border: '1px solid var(--border-glow)' }}>
-                          <Typography variant="body2" sx={{ color: 'var(--accent-primary)', fontWeight: 500 }}>
-                            {cioProgress}
-                          </Typography>
-                        </Box>
-                      )}
-                    </SettingSection>
-
-                    {(cioEnabled || cioSuggestions.length > 0) && (
-                      <SettingSection title="CIO Intelligence Dashboard" description={`${cioSuggestions.length} total \u00b7 ${cioSuggestions.filter(s => s.insight_type === 'understanding').length} architectural insights \u00b7 ${cioSuggestions.filter(s => !s.insight_type || s.insight_type === 'improvement').length} improvements`} icon={Code}>
-                        {/* Architecture Overview */}
-                        {(() => {
-                          const understandingInsights = cioSuggestions.filter(s => s.insight_type === 'understanding');
-                          const improvementInsights = cioSuggestions.filter(s => !s.insight_type || s.insight_type === 'improvement');
-                          const archInsights = understandingInsights.filter(s => ['architecture', 'feature_map', 'dependency', 'design_pattern', 'data_flow', 'cross_cutting'].includes(s.category));
-                          const featuresCount = understandingInsights.filter(s => s.category === 'feature_map').length;
-                          const depsCount = understandingInsights.filter(s => s.category === 'dependency').length;
-                          const patternsCount = understandingInsights.filter(s => s.category === 'design_pattern').length;
-                          const dataFlowsCount = understandingInsights.filter(s => s.category === 'data_flow').length;
-                          const crossCuttingCount = understandingInsights.filter(s => s.category === 'cross_cutting').length;
-                          const archCount = understandingInsights.filter(s => s.category === 'architecture').length;
-                          return archInsights.length > 0 && (
-                            <Box sx={{ mb: 3, p: 2.5, borderRadius: 'var(--radius-sm)', bgcolor: 'rgba(6, 182, 212, 0.06)', border: '1px solid rgba(6, 182, 212, 0.25)' }}>
-                              <Typography variant="subtitle2" fontWeight="800" sx={{ mb: 1.5, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <span style={{ fontSize: '1.1rem' }}>&#x1F3D7;&#xFE0F;</span> Architecture Overview
-                              </Typography>
-                              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 1.5 }}>
-                                {[
-                                  { label: 'Features', value: featuresCount, icon: '&#x1F4CB;', color: '#0ea5e9' },
-                                  { label: 'Dependencies', value: depsCount, icon: '&#x1F517;', color: '#f59e0b' },
-                                  { label: 'Patterns', value: patternsCount, icon: '&#x1F3AF;', color: '#a855f7' },
-                                  { label: 'Data Flows', value: dataFlowsCount, icon: '&#x1F504;', color: '#14b8a6' },
-                                  { label: 'Cross-Cutting', value: crossCuttingCount, icon: '&#x2702;&#xFE0F;', color: '#ec4899' },
-                                  { label: 'Architecture', value: archCount, icon: '&#x1F3D7;&#xFE0F;', color: '#06b6d4' },
-                                ].map(item => item.value > 0 && (
-                                  <Box key={item.label} sx={{ textAlign: 'center', p: 1, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--surface)' }}>
-                                    <Typography variant="body1" fontWeight="900" sx={{ color: item.color }}>{item.value}</Typography>
-                                    <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontWeight: 600 }}>{item.label}</Typography>
-                                  </Box>
-                                )).filter(Boolean)}
-                              </Box>
-                              <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'var(--text-tertiary)' }}>
-                                {understandingInsights.length} architectural insights &middot; {improvementInsights.length} improvement suggestions
-                              </Typography>
-                            </Box>
-                          );
-                        })()}
-                        {/* Stats Dashboard */}
-                        {cioShowStats && cioStats && (
-                          <Box sx={{ mb: 3, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                            <Typography variant="subtitle2" fontWeight="800" sx={{ mb: 2, color: 'var(--text)' }}>Dashboard</Typography>
-                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 2 }}>
-                              {[
-                                { label: 'Total', value: cioStats.total, color: 'var(--text)' },
-                                { label: 'Pending', value: cioStats.by_status?.pending || 0, color: '#f59e0b' },
-                                { label: 'Applied', value: cioStats.by_status?.applied || 0, color: 'var(--success)' },
-                                { label: 'Dismissed', value: cioStats.by_status?.dismissed || 0, color: 'var(--text-tertiary)' },
-                              ].map(stat => (
-                                <Box key={stat.label} sx={{ textAlign: 'center', p: 1.5, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--surface)' }}>
-                                  <Typography variant="h5" fontWeight="900" sx={{ color: stat.color }}>{stat.value}</Typography>
-                                  <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontWeight: 600 }}>{stat.label}</Typography>
-                                </Box>
-                              ))}
-                            </Box>
-                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
-                              <Box>
-                                <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontWeight: 700, mb: 1, display: 'block' }}>By Category</Typography>
-                                {Object.entries(cioStats.by_category || {}).map(([cat, count]) => (
-                                  <Box key={cat} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                    <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>{cat}</Typography>
-                                    <Typography variant="caption" fontWeight="700" sx={{ color: 'var(--text)' }}>{count}</Typography>
-                                  </Box>
-                                ))}
-                              </Box>
-                              <Box>
-                                <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontWeight: 700, mb: 1, display: 'block' }}>By Priority</Typography>
-                                {Object.entries(cioStats.by_priority || {}).map(([pri, count]) => (
-                                  <Box key={pri} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                                    <Typography variant="caption" sx={{ color: pri === 'high' ? '#ef4444' : pri === 'medium' ? '#f59e0b' : 'var(--text-secondary)' }}>{pri}</Typography>
-                                    <Typography variant="caption" fontWeight="700" sx={{ color: 'var(--text)' }}>{count}</Typography>
-                                  </Box>
-                                ))}
-                              </Box>
-                            </Box>
-                            {cioStats.avg_impact_score > 0 && (
-                              <Box sx={{ mt: 2, display: 'flex', gap: 3 }}>
-                                <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                                  Avg Impact: <strong>{cioStats.avg_impact_score}/10</strong>
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                                  Avg Effort: <strong>{cioStats.avg_effort_score}/10</strong>
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'var(--text-secondary)' }}>
-                                  Scans: <strong>{cioStats.scan_count}</strong>
-                                </Typography>
-                              </Box>
-                            )}
-                          </Box>
-                        )}
-
-                        {/* Scan History */}
-                        {cioShowHistory && (
-                          <Box sx={{ mb: 3, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                            <Typography variant="subtitle2" fontWeight="800" sx={{ mb: 1, color: 'var(--text)' }}>Scan History</Typography>
-                            {cioScanHistory.length === 0 ? (
-                              <Typography variant="caption" sx={{ color: 'var(--text-tertiary)' }}>No scan history yet</Typography>
-                            ) : (
-                              cioScanHistory.slice().reverse().slice(0, 10).map(scan => (
-                                <Box key={scan.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.75, borderBottom: '1px solid var(--border)' }}>
-                                  <Box>
-                                    <Typography variant="caption" fontWeight="600" sx={{ color: scan.status === 'completed' ? 'var(--success)' : scan.status === 'error' ? '#ef4444' : 'var(--text-secondary)' }}>
-                                      {scan.status.toUpperCase()}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', ml: 1 }}>{scan.suggestion_count} suggestions</Typography>
-                                  </Box>
-                                  <Typography variant="caption" sx={{ color: 'var(--text-tertiary)' }}>
-                                    {new Date(scan.timestamp).toLocaleString()}
-                                  </Typography>
-                                </Box>
-                              ))
-                            )}
-                          </Box>
-                        )}
-
-                        {cioLoading ? (
-                          <Box sx={{ textAlign: 'center', py: 4 }}>
-                            <CircularProgress size={32} sx={{ color: 'var(--accent-primary)' }} />
-                            <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mt: 2 }}>
-                              Analyzing codebase...
-                            </Typography>
-                          </Box>
-                        ) : cioSuggestions.length === 0 ? (
-                          <Typography variant="body2" sx={{ color: 'var(--text-tertiary)', textAlign: 'center', py: 4 }}>
-                            No suggestions yet. Click "Run Analysis" to start.
-                          </Typography>
-                        ) : (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            {/* Search, Filter & Sort Bar */}
-                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <TextField
-                                size="small"
-                                placeholder="Search suggestions..."
-                                value={cioSearch}
-                                onChange={(e) => { setCioSearch(e.target.value); setCioPage(0); }}
-                                sx={{ minWidth: 180, '& .MuiInputBase-root': { borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', fontSize: '0.85rem' } }}
-                                slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }}
-                              />
-                              <FormControl size="small" sx={{ minWidth: 100 }}>
-                                <Select
-                                  value={cioSortBy}
-                                  onChange={(e) => setCioSortBy(e.target.value)}
-                                  sx={{ borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', fontSize: '0.85rem' }}
-                                >
-                                  <MenuItem value="timestamp">Newest</MenuItem>
-                                  <MenuItem value="priority">Priority</MenuItem>
-                                  <MenuItem value="category">Category</MenuItem>
-                                  <MenuItem value="file_path">File</MenuItem>
-                                </Select>
-                              </FormControl>
-                            </Box>
-
-                            {/* Insight Type Toggle */}
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              {[
-                                { value: 'all', label: 'All Types' },
-                                { value: 'improvement', label: 'Improvements' },
-                                { value: 'understanding', label: 'Understanding' },
-                              ].map(opt => (
-                                <Chip 
-                                  key={opt.value}
-                                  label={opt.label}
-                                  size="small"
-                                  onClick={() => { setCioInsightType(opt.value); setCioPage(0); }}
-                                  sx={{ 
-                                    cursor: 'pointer',
-                                    bgcolor: cioInsightType === opt.value ? (opt.value === 'understanding' ? '#06b6d4' : opt.value === 'improvement' ? 'var(--accent-primary)' : 'var(--accent-primary)') : 'var(--surface)',
-                                    color: cioInsightType === opt.value ? 'white' : 'var(--text-secondary)',
-                                    '&:hover': { bgcolor: cioInsightType === opt.value ? (opt.value === 'understanding' ? '#0891b2' : 'var(--accent-primary)') : 'var(--surface-hover)' }
-                                  }}
-                                />
-                              ))}
-                            </Box>
-
-                            {/* Category & Priority Filters */}
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              {['all', 'functionality', 'documentation', 'refactoring', 'enhancement', 'security', 'performance', 'bug', 'architecture', 'feature_map', 'dependency', 'design_pattern', 'data_flow', 'cross_cutting'].map(cat => (
-                                <Chip 
-                                  key={cat}
-                                  label={cat === 'all' ? 'All' : cat === 'feature_map' ? 'Feature Map' : cat === 'data_flow' ? 'Data Flow' : cat === 'cross_cutting' ? 'Cross-Cutting' : cat === 'design_pattern' ? 'Design Pattern' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-                                  size="small"
-                                  onClick={() => { setCioFilter(cat); setCioPage(0); }}
-                                  sx={{ 
-                                    cursor: 'pointer',
-                                    bgcolor: cioFilter === cat ? 'var(--accent-primary)' : 'var(--surface)',
-                                    color: cioFilter === cat ? 'var(--bg)' : 'var(--text-secondary)',
-                                    '&:hover': { bgcolor: cioFilter === cat ? 'var(--accent-primary)' : 'var(--surface-hover)' }
-                                  }}
-                                />
-                              ))}
-                            </Box>
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              {['all', 'high', 'medium', 'low'].map(pri => (
-                                <Chip 
-                                  key={pri}
-                                  label={pri === 'all' ? 'All priorities' : pri.charAt(0).toUpperCase() + pri.slice(1)}
-                                  size="small"
-                                  onClick={() => { setCioPriorityFilter(pri); setCioPage(0); }}
-                                  sx={{ 
-                                    cursor: 'pointer',
-                                    bgcolor: cioPriorityFilter === pri ? (pri === 'high' ? '#ef4444' : pri === 'medium' ? '#f59e0b' : '#10b981') : 'var(--surface)',
-                                    color: cioPriorityFilter === pri ? 'white' : 'var(--text-secondary)',
-                                    '&:hover': { bgcolor: cioPriorityFilter === pri ? (pri === 'high' ? '#ef4444' : pri === 'medium' ? '#f59e0b' : '#10b981') : 'var(--surface-hover)' }
-                                  }}
-                                />
-                              ))}
-                            </Box>
-
-                            {/* Batch Actions */}
-                            {cioSelectedIds.size > 0 && (
-                              <Box sx={{ display: 'flex', gap: 1, p: 1.5, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--accent-subtle)', border: '1px solid var(--border)', alignItems: 'center' }}>
-                                <Typography variant="caption" fontWeight="700" sx={{ color: 'var(--text)' }}>
-                                  {cioSelectedIds.size} selected
-                                </Typography>
-                                <Button size="small" variant="outlined" startIcon={<Check fontSize="small" />} onClick={handleCIOBatchApply} sx={{ borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', color: 'var(--success)', borderColor: 'var(--success)' }}>
-                                  Apply All
-                                </Button>
-                                <Button size="small" variant="outlined" startIcon={<Close fontSize="small" />} onClick={handleCIOBatchDismiss} sx={{ borderRadius: 'var(--radius-sm)', fontSize: '0.75rem' }}>
-                                  Dismiss All
-                                </Button>
-                                <Button size="small" variant="text" onClick={() => setCioSelectedIds(new Set())} sx={{ fontSize: '0.75rem' }}>
-                                  Clear
-                                </Button>
-                              </Box>
-                            )}
-
-                            {/* Select All + Count */}
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <IconButton size="small" onClick={() => handleCIOSelectAll(
-                                  cioSuggestions.filter(s => cioFilter === 'all' || s.category === cioFilter).filter(s => cioPriorityFilter === 'all' || s.priority === cioPriorityFilter).filter(s => cioInsightType === 'all' || (s.insight_type || 'improvement') === cioInsightType).filter(s => !cioSearch || s.title?.toLowerCase().includes(cioSearch.toLowerCase()) || s.file_path?.toLowerCase().includes(cioSearch.toLowerCase()))
-                                )}>
-                                  {(() => {
-                                    const filtered = cioSuggestions.filter(s => cioFilter === 'all' || s.category === cioFilter).filter(s => cioPriorityFilter === 'all' || s.priority === cioPriorityFilter).filter(s => cioInsightType === 'all' || (s.insight_type || 'improvement') === cioInsightType);
-                                    const pendingIds = filtered.filter(s => s.status === 'pending').map(s => s.id);
-                                    if (cioSelectedIds.size >= pendingIds.length && pendingIds.length > 0 && pendingIds.every(id => cioSelectedIds.has(id))) return <CheckBox fontSize="small" sx={{ color: 'var(--accent-primary)' }} />;
-                                    if (cioSelectedIds.size > 0) return <IndeterminateCheckBox fontSize="small" sx={{ color: 'var(--accent-primary)' }} />;
-                                    return <CheckBoxOutlineBlank fontSize="small" />;
-                                  })()}
-                                </IconButton>
-                                <Typography variant="caption" sx={{ color: 'var(--text-tertiary)' }}>
-                                  {(() => {
-                                    const filtered = cioSuggestions.filter(s => cioFilter === 'all' || s.category === cioFilter)
-                                      .filter(s => cioPriorityFilter === 'all' || s.priority === cioPriorityFilter)
-                                      .filter(s => cioInsightType === 'all' || (s.insight_type || 'improvement') === cioInsightType)
-                                      .filter(s => !cioSearch || s.title?.toLowerCase().includes(cioSearch.toLowerCase()) || s.file_path?.toLowerCase().includes(cioSearch.toLowerCase()));
-                                    return `${filtered.length} total`;
-                                  })()} \u00b7 {cioSuggestions.filter(s => s.status === 'pending').length} pending
-                                </Typography>
-                              </Box>
-                            </Box>
-
-                            {/* Suggestions List - paginated */}
-                            {(() => {
-                              const filtered = cioSuggestions
-                                .filter(s => cioFilter === 'all' || s.category === cioFilter)
-                                .filter(s => cioPriorityFilter === 'all' || s.priority === cioPriorityFilter)
-                                .filter(s => cioInsightType === 'all' || (s.insight_type || 'improvement') === cioInsightType)
-                                .filter(s => !cioSearch || s.title?.toLowerCase().includes(cioSearch.toLowerCase()) || s.file_path?.toLowerCase().includes(cioSearch.toLowerCase()) || s.description?.toLowerCase().includes(cioSearch.toLowerCase()));
-
-                              const priorityOrder = { high: 3, medium: 2, low: 1 };
-                              const sorted = [...filtered].sort((a, b) => {
-                                if (cioSortBy === 'priority') return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-                                if (cioSortBy === 'category') return (a.category || '').localeCompare(b.category || '');
-                                if (cioSortBy === 'file_path') return (a.file_path || '').localeCompare(b.file_path || '');
-                                return 0;
-                              });
-
-                              const totalPages = Math.ceil(sorted.length / CIO_PAGE_SIZE);
-                              const safePage = cioPage >= totalPages && totalPages > 0 ? totalPages - 1 : cioPage;
-                              const start = safePage * CIO_PAGE_SIZE;
-                              const page = sorted.slice(start, start + CIO_PAGE_SIZE);
-                              return page.map((suggestion, idx) => (
-                                <Card 
-                                  key={suggestion.id || idx}
-                                  sx={{ 
-                                    borderRadius: 'var(--radius)', 
-                                    bgcolor: suggestion.status === 'applied' ? 'rgba(16, 185, 129, 0.05)' : suggestion.status === 'dismissed' ? 'rgba(156, 163, 175, 0.05)' : 'var(--bg-secondary)',
-                                    border: '1px solid',
-                                    borderColor: suggestion.status === 'applied' ? 'rgba(16, 185, 129, 0.3)' : suggestion.status === 'dismissed' ? 'rgba(156, 163, 175, 0.2)' : 'var(--border)',
-                                    opacity: suggestion.status === 'dismissed' ? 0.6 : 1,
-                                    '&:hover': { borderColor: 'var(--border-hover)' }
-                                  }}
-                                >
-                                  <CardContent sx={{ p: 2.5 }}>
-                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                        {suggestion.status === 'pending' && (
-                                          <IconButton size="small" onClick={() => handleCIOToggleSelect(suggestion.id)} sx={{ p: 0.25 }}>
-                                            {cioSelectedIds.has(suggestion.id) ? <CheckBox fontSize="small" sx={{ color: 'var(--accent-primary)' }} /> : <CheckBoxOutlineBlank fontSize="small" />}
-                                          </IconButton>
-                                        )}
-                                        <Chip 
-                                          size="small" 
-                                          label={suggestion.category === 'feature_map' ? 'Feature Map' : suggestion.category === 'data_flow' ? 'Data Flow' : suggestion.category === 'cross_cutting' ? 'Cross-Cutting' : suggestion.category === 'design_pattern' ? 'Design Pattern' : suggestion.category}
-                                          sx={{ 
-                                            bgcolor: suggestion.category === 'architecture' ? '#06b6d4' :
-                                                     suggestion.category === 'feature_map' ? '#0ea5e9' :
-                                                     suggestion.category === 'dependency' ? '#f59e0b' :
-                                                     suggestion.category === 'design_pattern' ? '#a855f7' :
-                                                     suggestion.category === 'data_flow' ? '#14b8a6' :
-                                                     suggestion.category === 'cross_cutting' ? '#ec4899' :
-                                                     suggestion.category === 'refactoring' ? 'var(--accent-cyan)' : 
-                                                     suggestion.category === 'enhancement' ? 'var(--accent-primary)' :
-                                                     suggestion.category === 'documentation' ? 'var(--accent-secondary)' :
-                                                     suggestion.category === 'security' ? '#ef4444' :
-                                                     suggestion.category === 'bug' ? '#f97316' :
-                                                     suggestion.category === 'performance' ? '#8b5cf6' :
-                                                     'var(--success)',
-                                            color: 'var(--bg)',
-                                            fontWeight: 700,
-                                            fontSize: '0.65rem',
-                                            textTransform: 'uppercase'
-                                          }}
-                                        />
-                                        {(suggestion.insight_type === 'understanding' || suggestion.insight_type === 'understanding') && (
-                                          <Chip
-                                            size="small"
-                                            label="UNDERSTANDING"
-                                            sx={{
-                                              bgcolor: '#06b6d4',
-                                              color: 'white',
-                                              fontWeight: 700,
-                                              fontSize: '0.55rem',
-                                              textTransform: 'uppercase',
-                                              letterSpacing: '0.05em'
-                                            }}
-                                          />
-                                        )}
-                                        <Chip
-                                          size="small"
-                                          label={suggestion.priority}
-                                          sx={{
-                                            bgcolor: suggestion.priority === 'high' ? '#ef4444' : 
-                                                     suggestion.priority === 'medium' ? '#f59e0b' : '#10b981',
-                                            color: 'var(--bg)',
-                                            fontWeight: 700,
-                                            fontSize: '0.65rem',
-                                            textTransform: 'uppercase'
-                                          }}
-                                        />
-                                      </Box>
-                                      <Box sx={{ display: 'flex', gap: 1 }}>
-                                        {suggestion.status === 'pending' && (
-                                          <>
-                                            <Tooltip title="Apply suggestion">
-                                              <IconButton size="small" onClick={() => handleApplySuggestion(suggestion.id)} sx={{ color: 'var(--success)' }}>
-                                                <Check fontSize="small" />
-                                              </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Adapt before applying">
-                                              <IconButton size="small" onClick={() => {
-                                                const adapted = window.prompt('Edit the suggested code:', suggestion.suggested_code);
-                                                if (adapted) handleAdaptSuggestion(suggestion.id, adapted);
-                                              }} sx={{ color: 'var(--accent-primary)' }}>
-                                                <Edit fontSize="small" />
-                                              </IconButton>
-                                            </Tooltip>
-                                          </>
-                                        )}
-                                        {(suggestion.status === 'applied' || suggestion.status === 'adapted') && (
-                                          <Tooltip title="Revert this change">
-                                            <IconButton size="small" onClick={() => handleCIORevert(suggestion.id)} sx={{ color: 'var(--warning, #f59e0b)' }}>
-                                              <Undo fontSize="small" />
-                                            </IconButton>
-                                          </Tooltip>
-                                        )}
-                                        {suggestion.status === 'adapted' && suggestion.adapted_code && (
-                                          <Tooltip title="Apply adapted version">
-                                            <IconButton size="small" onClick={() => handleApplyAdapted(suggestion.id, suggestion.adapted_code)} sx={{ color: 'var(--success)' }}>
-                                              <Check fontSize="small" />
-                                            </IconButton>
-                                          </Tooltip>
-                                        )}
-                                        <Chip
-                                          size="small"
-                                          label={suggestion.status}
-                                          sx={{
-                                            bgcolor: suggestion.status === 'applied' ? 'var(--success)' :
-                                                     suggestion.status === 'reverted' ? '#f59e0b' :
-                                                     suggestion.status === 'adapted' ? 'var(--accent-primary)' :
-                                                     suggestion.status === 'dismissed' ? 'var(--text-tertiary)' : 'var(--surface)',
-                                            color: !['pending', 'adapted'].includes(suggestion.status) ? 'var(--bg)' : 'var(--text-tertiary)',
-                                            fontWeight: 700,
-                                            fontSize: '0.6rem',
-                                            height: 20
-                                          }}
-                                        />
-                                        {suggestion.status === 'pending' && (
-                                          <IconButton size="small" onClick={() => handleDismissSuggestion(suggestion.id)} title="Dismiss">
-                                            <Close fontSize="small" />
-                                          </IconButton>
-                                        )}
-                                      </Box>
-                                    </Box>
-                                    <Typography variant="subtitle2" fontWeight="700" sx={{ color: 'var(--text)', mb: 0.5 }}>
-                                      {suggestion.title}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-                                      {suggestion.file_path}:{suggestion.line_start}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ color: 'var(--text-secondary)', mt: 1, fontSize: '0.85rem' }}>
-                                      {suggestion.description}
-                                    </Typography>
-                                    {suggestion.current_code && (
-                                      <Box sx={{ mt: 2, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', border: '1px solid var(--border)' }}>
-                                        <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', fontWeight: 700, mb: 1, display: 'block' }}>
-                                          Current:
-                                        </Typography>
-                                        <pre style={{ margin: 0, fontSize: '0.75rem', overflow: 'auto', color: 'var(--text)' }}>
-                                          {suggestion.current_code}
-                                        </pre>
-                                      </Box>
-                                    )}
-                                    {suggestion.suggested_code && suggestion.suggested_code.includes('\n') || suggestion.suggested_code.includes('"""') || suggestion.suggested_code.startsWith('#') ? (
-                                      <Box sx={{ mt: 1, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'var(--accent-subtle)', border: '1px solid var(--border-glow)' }}>
-                                        <Typography variant="caption" sx={{ color: 'var(--accent-primary)', fontWeight: 700, mb: 1, display: 'block' }}>
-                                          Suggested:
-                                        </Typography>
-                                        <pre style={{ margin: 0, fontSize: '0.75rem', overflow: 'auto', color: 'var(--accent-primary)' }}>
-                                          {suggestion.suggested_code}
-                                        </pre>
-                                      </Box>
-                                    ) : null}
-                                    <Typography variant="caption" sx={{ color: 'var(--text-tertiary)', mt: 1.5, fontStyle: 'italic', display: 'block' }}>
-                                      {suggestion.rationale}
-                                    </Typography>
-                                    {suggestion.impact && (
-                                      <Box sx={{ mt: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
-                                        <Chip 
-                                          size="small"
-                                          label={`Impact: ${suggestion.impact.impact_score}/10`}
-                                          sx={{
-                                            bgcolor: suggestion.impact.impact_score >= 7 ? '#ef4444' : 
-                                                     suggestion.impact.impact_score >= 4 ? '#f59e0b' : '#10b981',
-                                            color: 'white',
-                                            fontWeight: 700,
-                                            fontSize: '0.65rem'
-                                          }}
-                                        />
-                                        <Chip 
-                                          size="small"
-                                          label={`Effort: ${suggestion.impact.effort_score}/10`}
-                                          sx={{
-                                            bgcolor: suggestion.impact.effort_score <= 3 ? '#10b981' : 
-                                                     suggestion.impact.effort_score <= 6 ? '#f59e0b' : '#ef4444',
-                                            color: 'white',
-                                            fontWeight: 700,
-                                            fontSize: '0.65rem'
-                                          }}
-                                        />
-                                        {suggestion.impact.downstream_affected?.length > 0 && (
-                                          <Typography variant="caption" sx={{ color: 'var(--text-tertiary)' }}>
-                                            Affects: {suggestion.impact.downstream_affected.join(', ')}
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    )}
-                                    {suggestion.hypothesis && (
-                                      <Typography variant="caption" sx={{ color: 'var(--accent-cyan)', mt: 1, display: 'block' }}>
-                                        {suggestion.hypothesis}
-                                      </Typography>
-                                    )}
-                                  </CardContent>
-                                </Card>
-                              ));
-                            })()}
-                            {/* Pagination */}
-                            {(() => {
-                              const filtered = cioSuggestions
-                                .filter(s => cioFilter === 'all' || s.category === cioFilter)
-                                .filter(s => cioPriorityFilter === 'all' || s.priority === cioPriorityFilter)
-                                .filter(s => cioInsightType === 'all' || (s.insight_type || 'improvement') === cioInsightType)
-                                .filter(s => !cioSearch || s.title?.toLowerCase().includes(cioSearch.toLowerCase()) || s.file_path?.toLowerCase().includes(cioSearch.toLowerCase()));
-                              const totalPages = Math.ceil(filtered.length / CIO_PAGE_SIZE);
-                              if (totalPages <= 1) return null;
-                              return (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
-                                  <IconButton size="small" disabled={cioPage === 0} onClick={() => setCioPage(p => Math.max(0, p - 1))}>
-                                    <ArrowBack fontSize="small" />
-                                  </IconButton>
-                                  <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', px: 1 }}>
-                                    {cioPage + 1} / {totalPages}
-                                  </Typography>
-                                  <IconButton size="small" disabled={cioPage >= totalPages - 1} onClick={() => setCioPage(p => Math.min(totalPages - 1, p + 1))}>
-                                    <ArrowForward fontSize="small" />
-                                  </IconButton>
-                                </Box>
-                              );
-                            })()}
-                          </Box>
-                        )}
-                      </SettingSection>
-                    )}
-                  </>
-                )}
               </Box>
             </Fade>
           ) : (
             <Fade in={true}>
               <Box sx={{ maxWidth: 600, mx: 'auto' }}>
-                <Button 
-                  startIcon={<ArrowBack />} 
-                  onClick={() => setView('list')} 
+                <Button
+                  variant="text"
+                  startIcon={<ArrowBack />}
+                  onClick={() => setView('list')}
                   sx={{ mb: 4, color: 'var(--text-secondary)', '&:hover': { color: 'var(--text)' } }}
                 >
                   Back to Overview
                 </Button>
-                
-                <Paper sx={{ 
-                  p: 5, borderRadius: 'var(--radius)', 
-                  background: 'var(--surface)', 
+
+                <Paper sx={{
+                  p: 5, borderRadius: 'var(--radius)',
+                  background: 'var(--surface)',
                   border: '1px solid var(--border)',
                   boxShadow: 'var(--shadow-lg)'
                 }}>
@@ -1848,11 +803,11 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                       {PROVIDER_TYPES.map(type => {
                         const isSelected = formData.type === type.id;
                         return (
-                          <Box 
-                            key={type.id} 
+                          <Box
+                            key={type.id}
                             onClick={() => handleTypeChange(type.id)}
-                            sx={{ 
-                              flex: 1, p: 2, cursor: 'pointer', borderRadius: 'var(--radius-sm)', 
+                            sx={{
+                              flex: 1, p: 2, cursor: 'pointer', borderRadius: 'var(--radius-sm)',
                               border: '2px solid',
                               borderColor: isSelected ? 'var(--text)' : 'var(--border)',
                               background: isSelected ? 'var(--bg-secondary)' : 'transparent',
@@ -1869,38 +824,38 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                     </Box>
 
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <TextField 
-                        fullWidth label="Connection Name" 
-                        value={formData.name} 
-                        onChange={e => setFormData({ ...formData, name: e.target.value })} 
+                      <TextField
+                        fullWidth label="Connection Name"
+                        value={formData.name}
+                        onChange={e => setFormData({ ...formData, name: e.target.value })}
                         placeholder="e.g. My Local Llama"
-                        slotProps={{ input: { sx: { borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)' } } }} 
+                        slotProps={{ input: { sx: { borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)' } } }}
                       />
-                      
+
                       {formData.type !== 'anthropic' && (
-                        <TextField 
-                          fullWidth label="API Base URL" 
-                          value={formData.base_url} 
-                          onChange={e => setFormData({ ...formData, base_url: e.target.value })} 
-                          placeholder={formData.type === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'} 
-                          slotProps={{ 
-                            input: { 
+                        <TextField
+                          fullWidth label="API Base URL"
+                          value={formData.base_url}
+                          onChange={e => setFormData({ ...formData, base_url: e.target.value })}
+                          placeholder={formData.type === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
+                          slotProps={{
+                            input: {
                               sx: { borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', fontFamily: 'monospace' },
                               startAdornment: <InputAdornment position="start"><Language fontSize="small" /></InputAdornment>
-                            } 
-                          }} 
+                            }
+                          }}
                         />
                       )}
 
                       {(formData.type === 'openai' || formData.type === 'anthropic') && (
-                        <TextField 
-                          fullWidth label="API Access Key" 
+                        <TextField
+                          fullWidth label="API Access Key"
                           type={showApiKey ? 'text' : 'password'}
-                          value={formData.api_key} 
-                          onChange={e => setFormData({ ...formData, api_key: e.target.value })} 
+                          value={formData.api_key}
+                          onChange={e => setFormData({ ...formData, api_key: e.target.value })}
                           placeholder="sk-..."
-                          slotProps={{ 
-                            input: { 
+                          slotProps={{
+                            input: {
                               sx: { borderRadius: 'var(--radius-sm)', bgcolor: 'var(--bg)', fontFamily: 'monospace' },
                               startAdornment: <InputAdornment position="start"><Key fontSize="small" /></InputAdornment>,
                               endAdornment: (
@@ -1910,21 +865,21 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                                   </IconButton>
                                 </InputAdornment>
                               )
-                            } 
-                          }} 
+                            }
+                          }}
                         />
                       )}
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 2, mt: 5 }}>
-                      <Button 
-                        variant="outlined" fullWidth onClick={() => setView('list')} 
+                      <Button
+                        variant="outlined" fullWidth onClick={() => setView('list')}
                         sx={{ borderRadius: 'var(--radius-sm)', py: 1.5, borderColor: 'var(--border)', color: 'var(--text)' }}
                       >
                         Cancel
                       </Button>
-                      <Button 
-                        variant="contained" fullWidth type="submit" 
+                      <Button
+                        variant="contained" fullWidth type="submit"
                         sx={{ borderRadius: 'var(--radius-sm)', py: 1.5, background: 'var(--text)', color: 'var(--bg)', fontWeight: 800 }}
                       >
                         {view === 'add' ? 'Connect Service' : 'Save Changes'}
@@ -1932,7 +887,7 @@ const SettingsPage = ({ config, onSave, models = [], onRefreshModels, cioProcess
                     </Box>
                   </form>
                 </Paper>
-                
+
                 <Box sx={{ mt: 4, p: 2, borderRadius: 'var(--radius-sm)', bgcolor: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.1)', display: 'flex', gap: 2 }}>
                   <Info sx={{ color: '#3b82f6', mt: 0.2 }} fontSize="small" />
                   <Typography variant="caption" sx={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>

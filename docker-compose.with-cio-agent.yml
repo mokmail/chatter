@@ -1,0 +1,19 @@
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.with-cio-agent.yml up -d
+# This override enables the CIO Agent service and configures the backend to use it
+
+services:
+  backend:
+    environment:
+      - CIO_AGENT_ENABLED=true
+      - CIO_AGENT_URL=http://cio-agent:8001
+
+  cio-agent:
+    build:
+      context: ./cio_agent_service
+    container_name: cio-intelligence-hub-cio-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - CIO_AGENT_ENABLED=true
+      - CIO_AGENT_URL=http://cio-agent:8001
+    restart: unless-stopped

@@ -11,16 +11,16 @@ const Overview = () => (
       </div>
       <h1 className="text-3xl font-bold mb-3" style={{ color: 'var(--text)' }}>CIO Intelligence Hub</h1>
       <p className="text-base max-w-lg mx-auto" style={{ color: 'var(--text-secondary)' }}>
-        Self-hosted AI chat interface with Ollama and OpenAI-compatible API support. Features Knowledge Bases (classic RAG + GraphRAG), reasoning model support, artifacts, follow-up prompts, notes enhancement, and global chat history search.
+        Self-hosted AI chat interface with multi-provider support (Ollama, OpenAI, Anthropic). Features Knowledge Bases (Classic RAG + GraphRAG), agentic tool calling, code execution, reasoning models, artifacts, follow-ups, notes with 12 types, and unified search.
       </p>
     </div>
 
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {[
-        { label: 'Providers', value: 'Multi', icon: '🧠', color: 'var(--accent)' },
+        { label: 'Providers', value: '3', icon: '🧠', color: 'var(--accent)' },
         { label: 'KB Types', value: '6', icon: '📚', color: '#8b5cf6' },
-        { label: 'RAG Modes', value: '2', icon: '🔍', color: '#f97316' },
-        { label: 'Sessions', value: 'Multi', icon: '💬', color: '#22c55e' },
+        { label: 'Note Types', value: '12', icon: '📝', color: '#f59e0b' },
+        { label: 'Search Modes', value: '5', icon: '🔍', color: '#f97316' },
       ].map(stat => (
         <div key={stat.label} className="text-center p-4 rounded-2xl" style={{ background: 'var(--glass)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(16px)' }}>
           <div className="text-2xl mb-1">{stat.icon}</div>
@@ -37,12 +37,13 @@ const Overview = () => (
       </h3>
       <div className="space-y-2">
         {[
-          { step: '1', text: 'Configure your AI provider in Settings (Ollama, OpenAI, or compatible)' },
+          { step: '1', text: 'Configure your AI providers in Settings (Ollama, OpenAI, or Anthropic)' },
           { step: '2', text: 'Select a model from the header dropdown' },
           { step: '3', text: 'Start chatting — responses stream in real-time with reasoning blocks' },
-          { step: '4', text: 'Build Knowledge Bases from notes, documents, web, or API sources' },
+          { step: '4', text: 'Build Knowledge Bases from notes, documents, web, API, git repos, or services' },
           { step: '5', text: 'Switch a KB to GraphRAG mode for entity-based graph retrieval' },
-          { step: '6', text: 'Use Cmd+K to search your entire chat history' },
+          { step: '6', text: 'Use Cmd+K to search across all chats, notes, and knowledge bases' },
+          { step: '7', text: 'Enable agentic mode to let the model use tools (web search, notes CRUD)' },
         ].map(s => (
           <div key={s.step} className="flex items-center gap-3">
             <span className="text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{s.step}</span>
@@ -59,19 +60,20 @@ const Overview = () => (
       </h3>
       <div className="grid grid-cols-2 gap-3">
         {[
-          { title: 'Multi-Provider', desc: 'Ollama, OpenAI-compatible, and Anthropic APIs' },
-          { title: 'Classic + GraphRAG', desc: 'Vectorstore RAG or graph-based entity retrieval' },
-          { title: 'Streaming', desc: 'Real-time token-by-token responses' },
-          { title: 'Reasoning Models', desc: 'Collapsible thinking blocks with custom tags' },
-          { title: 'Code Execution', desc: 'Run Python and JavaScript in-chat' },
-          { title: 'Artifacts', desc: 'HTML, SVG, ThreeJS, D3.js with versioning' },
+          { title: 'Multi-Provider', desc: 'Ollama, OpenAI-compatible, and Anthropic with unified provider registry' },
+          { title: 'Classic + GraphRAG', desc: 'Vectorstore RAG with hybrid search + graph-based entity retrieval' },
+          { title: 'Agentic Chat', desc: 'Models can call tools: web search, notes CRUD, URL fetching' },
+          { title: 'Streaming', desc: 'Real-time token-by-token responses via SSE' },
+          { title: 'Reasoning Models', desc: 'Collapsible thinking blocks with custom tags and Ollama think mode' },
+          { title: 'Code Execution', desc: 'Sandboxed Python execution with matplotlib figure capture' },
+          { title: 'Artifacts', desc: 'HTML, SVG, ThreeJS, D3.js with versioning in a resizable panel' },
           { title: 'Math & Diagrams', desc: 'KaTeX, Mermaid, and syntax highlighting' },
-          { title: 'Notes Enhancement', desc: 'AI rewrite, chat drawer, export, pinning' },
-          { title: 'History Search', desc: 'Cmd+K fuzzy search across all chats' },
+          { title: 'Notes Enhancement', desc: '12 note types, AI rewrite, chat drawer, export to txt/md/pdf' },
+          { title: 'History & Search', desc: 'Cmd+K unified search across chats, notes, and KBs' },
           { title: 'Follow-Up Prompts', desc: 'Auto-generated contextual questions' },
-          { title: 'KB Chat Isolation', desc: 'KB-scoped conversations never leak' },
+          { title: 'Message Tree', desc: 'Edit, branch, fork, continue, regenerate, evaluate, delete per message' },
+          { title: 'KB Chat Isolation', desc: 'KB-scoped conversations never leak into main chat' },
           { title: 'CIO Agent', desc: 'AI code analysis with 10+ rule categories' },
-          { title: 'Dark / Light Mode', desc: 'Full theme support with persistence' },
         ].map(cap => (
           <div key={cap.title} className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <div className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text)' }}>{cap.title}</div>

@@ -56,8 +56,6 @@ class Config(BaseModel):
     neo4j_uri: Optional[str] = None
     neo4j_user: Optional[str] = None
     neo4j_password: Optional[str] = None
-    qdrant_url: str = "http://qdrant:6333"
-    qdrant_api_key: Optional[str] = None
     cio_agent_enabled: bool = False
     cio_agent_auto_scan: bool = True
     cio_agent_include_tests: bool = False

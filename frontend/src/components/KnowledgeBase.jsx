@@ -167,15 +167,11 @@ const KB_TYPES = [
     color: '#6366f1',
     icon: <DatabaseIcon size={20} />,
     settings: [
-      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject All Content' },
-      { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
-      { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
+      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Chunk Search, Full=Inject All Content' },
       { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk' },
       { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
       { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
       { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
-      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
-      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
     ],
   },
   {
@@ -185,6 +181,10 @@ const KB_TYPES = [
     color: '#10b981',
     icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C3.75 16.153 7.444 18 12 18s8.25-1.847 8.25-4.125v-3.75m0 0l-3.75-3.75m3.75 3.75l3.75-3.75m-16.5 3.75l3.75-3.75m-3.75 3.75l-3.75-3.75" /></svg>,
     settings: [
+      { key: 'vectorDb', label: 'Vector Database', type: 'select', default: 'chroma', help: 'Backend for storing and querying embeddings', options: [
+        { value: 'chroma', label: 'ChromaDB' },
+        { value: 'qdrant', label: 'Qdrant' },
+      ]},
       { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Vector Search, Full=Inject All Content' },
       { key: 'hybrid_search', label: 'Hybrid Search', type: 'toggle', default: true, help: 'Combine Vector + Keyword (BM25) search' },
       { key: 'reranking', label: 'Reranking', type: 'toggle', default: true, help: 'Use Cross-Encoder to rerank results' },
@@ -195,8 +195,6 @@ const KB_TYPES = [
       { key: 'topK', label: 'Top K', type: 'number', default: 10, help: 'Number of chunks to retrieve' },
       { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
       { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
-      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
-      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
     ],
   },
   {
@@ -206,13 +204,16 @@ const KB_TYPES = [
     color: '#f97316',
     icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" /></svg>,
     settings: [
-      { key: 'retrieval_mode', label: 'Retrieval Mode', type: 'select', options: ['focused', 'full'], default: 'focused', help: 'Focused=Graph Search, Full=Inject All Content' },
+      { key: 'graph_mode', label: 'Graph Retrieval Mode', type: 'select', options: ['local', 'global', 'hybrid', 'path', 'neighborhood'], default: 'local', help: 'Graph search strategy: local=BFS, global=community, hybrid=vectors+graph' },
+      { key: 'max_depth', label: 'BFS Max Depth', type: 'number', default: 2, help: 'Entity traversal depth for local/hybrid search' },
+      { key: 'top_k', label: 'Top K', type: 'number', default: 5, help: 'Communities/chunks/edges to return' },
       { key: 'chunk_size', label: 'Chunk Size', type: 'number', default: 1000, help: 'Characters per chunk for extraction' },
       { key: 'chunk_overlap', label: 'Chunk Overlap', type: 'number', default: 200, help: 'Character overlap between chunks' },
+      { key: 'extraction_model', label: 'Extraction Model', type: 'text', default: '', help: 'LLM for entity/relationship extraction (empty = default)' },
+      { key: 'embeddingModel', label: 'Embedding Model', type: 'text', default: '', help: 'Model for embeddings (empty = default)' },
+      { key: 'embeddingProvider', label: 'Embedding Provider', type: 'text', default: '', help: 'Provider ID for embeddings (empty = default)' },
       { key: 'kb_chat_enabled', label: 'Enable KB Chat', type: 'toggle', default: true, help: 'Allow chatting with this KB' },
       { key: 'chat_model', label: 'Chat Model', type: 'select', options: ['default', 'loading...'], default: 'default', help: 'AI model for KB chat' },
-      { key: 'temperature', label: 'Temperature', type: 'select', options: ['0.0', '0.1', '0.3', '0.5', '0.7', '1.0'], default: '0.7', help: 'Creativity vs precision (0=strict, 1=creative)' },
-      { key: 'max_context_chunks', label: 'Max Context Chunks', type: 'number', default: 10, help: 'Chunks to include in context' },
     ],
   },
 ]
@@ -314,9 +315,11 @@ const SettingRow = ({ field, value, onChange }) => {
             className="w-full px-3 py-1.5 rounded-lg text-sm"
             style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)' }}
           >
-            {field.options.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
+            {field.options.map(opt => {
+              const optValue = typeof opt === 'object' ? opt.value : opt
+              const optLabel = typeof opt === 'object' ? opt.label : opt
+              return <option key={optValue} value={optValue}>{optLabel}</option>
+            })}
           </select>
         )
       case 'file':
@@ -895,18 +898,27 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
   const modelOptions = ['default', ...(models || []).map(m => m.id || m.name)]
 
   useEffect(() => {
-    setConfig({
-      ...kb.config,
-      retrieval_mode: kb.retrieval_mode,
-      hybrid_search: kb.hybrid_search,
-      reranking: kb.reranking,
-      chunk_size: kb.chunk_size,
-      chunk_overlap: kb.chunk_overlap,
-      kb_chat_enabled: kb.config?.kb_chat_enabled ?? true,
-      chat_model: kb.config?.chat_model ?? 'default',
-      temperature: kb.config?.temperature ?? '0.7',
-      max_context_chunks: kb.config?.max_context_chunks ?? 10,
-    })
+    const newConfig = { ...kb.config }
+    newConfig.retrieval_mode = kb.retrieval_mode
+    newConfig.hybrid_search = kb.hybrid_search
+    newConfig.reranking = kb.reranking
+    newConfig.chunk_size = kb.chunk_size
+    newConfig.chunk_overlap = kb.chunk_overlap
+    newConfig.kb_chat_enabled = kb.config?.kb_chat_enabled ?? true
+    newConfig.chat_model = kb.config?.chat_model ?? 'default'
+    if (kb.kb_type === 'graphrag') {
+      newConfig.graph_mode = kb.config?.graph_mode ?? 'local'
+      newConfig.max_depth = kb.config?.max_depth ?? 2
+      newConfig.top_k = kb.config?.top_k ?? 5
+      newConfig.extraction_model = kb.config?.extraction_model ?? ''
+    }
+    if (kb.kb_type === 'vectorstore') {
+      newConfig.vectorDb = kb.config?.vectorDb ?? 'chroma'
+      newConfig.embeddingModel = kb.config?.embeddingModel ?? ''
+      newConfig.embeddingProvider = kb.config?.embeddingProvider ?? ''
+      newConfig.topK = kb.config?.topK ?? 10
+    }
+    setConfig(newConfig)
     setHasChanges(false)
     setGraphBuildError(null)
     setBuildProgress(null)
@@ -915,7 +927,7 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
       clearInterval(progressIntervalRef.current)
       progressIntervalRef.current = null
     }
-  }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap, kb.graph_status])
+  }, [kb.id, kb.retrieval_mode, kb.hybrid_search, kb.reranking, kb.chunk_size, kb.chunk_overlap, kb.graph_status, kb.kb_type])
 
   const handleChange = (key, value) => {
     setConfig({ ...config, [key]: value })
@@ -923,11 +935,15 @@ const SettingsPanel = ({ kb, onSave, models = [], onRefresh, onDeleteSource, onE
   }
 
   const handleSave = () => {
-    const coreFields = ['retrieval_mode', 'hybrid_search', 'reranking', 'chunk_size', 'chunk_overlap', 'kb_chat_enabled', 'chat_model', 'temperature', 'max_context_chunks']
+    // Only these fields exist as top-level KB model fields in the backend KBUpdate model.
+    // Everything else stays in the config dict so it gets persisted via the config merge.
+    const topLevelFields = new Set([
+      'retrieval_mode', 'hybrid_search', 'reranking', 'chunk_size', 'chunk_overlap',
+    ])
     const updateData = {}
     const configData = { ...config }
 
-    coreFields.forEach(field => {
+    topLevelFields.forEach(field => {
       if (config[field] !== undefined) {
         updateData[field] = config[field]
         delete configData[field]
@@ -1397,9 +1413,9 @@ const GraphStatusBadge = ({ status, size = 'md', showLabel = true }) => {
 const KnowledgeBaseCard = ({ kb, active, onClick, onDelete, viewMode = 'list' }) => {
   const typeInfo = getKBTypeInfo(kb.kb_type)
   const itemCount = kb.file_count || 0
-  const embeddedCount = kb.files?.filter(f => f.is_embedded).length || 0
-  const totalTokens = kb.files?.reduce((sum, f) => sum + (f.token_count || 0), 0) || 0
-  const totalChunks = kb.files?.reduce((sum, f) => sum + (f.chunks_count || 0), 0) || 0
+  const embeddedCount = kb.embedded_count ?? (kb.files?.filter(f => f.is_embedded).length ?? 0)
+  const totalTokens = kb.total_tokens ?? (kb.files?.reduce((sum, f) => sum + (f.token_count || 0), 0) ?? 0)
+  const totalChunks = kb.total_chunks ?? (kb.files?.reduce((sum, f) => sum + (f.chunks_count || 0), 0) ?? 0)
 
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
@@ -2180,7 +2196,7 @@ const FilePreviewModal = ({ file, content, embeddingsData, onClose }) => {
 
     if (category === 'markdown') {
       return (
-        <div className="prose prose-sm max-w-none rounded-xl p-6" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+        <div className="prose prose-sm max-w-none rounded-xl p-6 overflow-y-auto" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', maxHeight: '100%' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       )
@@ -2386,7 +2402,7 @@ const FilePreviewModal = ({ file, content, embeddingsData, onClose }) => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden p-6 bg-grid">
+        <div className="flex-1 overflow-y-auto p-6 bg-grid">
           {viewMode === 'raw' ? (
             <pre className="text-sm font-mono whitespace-pre-wrap rounded-xl p-4 overflow-auto"
               style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', maxHeight: '70vh' }}>
@@ -3574,7 +3590,7 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
                     <div>
                       <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>Embedding complete</div>
                       <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        {embedProgress.chunks} chunks · {embedProgress.tokens} tokens · {embedProgress.embedding_dimensions}d embedding
+                        {embedProgress.chunks} chunks · {embedProgress.tokens?.toLocaleString()} tokens · {embedProgress.embedding_model || 'default'}{embedProgress.embedding_dimensions ? ` · ${embedProgress.embedding_dimensions}d` : ''}
                       </div>
                     </div>
                   </div>
@@ -3599,32 +3615,81 @@ const KnowledgeBase = ({ onRefresh, models = [] }) => {
               <div className="border-b overflow-y-auto max-h-[50vh]" style={{ borderColor: 'var(--border)' }}>
                 {/* Information Info Grid */}
                 <div className="p-4 bg-[var(--bg-secondary)] border-b grid grid-cols-1 md:grid-cols-3 gap-3" style={{ borderColor: 'var(--border)' }}>
-                  <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
-                    <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                      Storage
-                    </div>
-                    <div className="text-xs font-bold text-[var(--text)] truncate">{selectedKB.storage_path ? selectedKB.storage_path.split('/').pop() : 'Default'}</div>
-                    <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{selectedKB.storage_path || 'Standard location'}</div>
-                  </div>
+                  {(() => {
+                    const fmt = (b) => {
+                      if (!b || b === 0) return '0 B'
+                      const k = 1024, s = ['B', 'KB', 'MB', 'GB']
+                      const i = Math.floor(Math.log(b) / Math.log(k))
+                      return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + s[i]
+                    }
+                    const fmtNum = (n) => {
+                      if (!n || n === 0) return '0'
+                      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+                      if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+                      return n.toString()
+                    }
+                    const fmtDate = (ts) => {
+                      if (!ts) return 'Never'
+                      return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    }
+                    const fmtAgo = (ts) => {
+                      if (!ts) return ''
+                      const diff = Date.now() / 1000 - ts
+                      const m = Math.floor(diff / 60), h = Math.floor(diff / 3600), d = Math.floor(diff / 86400)
+                      if (m < 1) return 'just now'
+                      if (m < 60) return `${m}m ago`
+                      if (h < 24) return `${h}h ago`
+                      if (d < 7) return `${d}d ago`
+                      return fmtDate(ts)
+                    }
+                    const totalSize = selectedKB.total_size_bytes || 0
+                    const totalTokens = selectedKB.total_tokens || 0
+                    const totalChunks = selectedKB.total_chunks || 0
+                    const fileCount = selectedKB.file_count ?? (selectedKB.files?.length ?? 0)
+                    const embeddedCount = selectedKB.embedded_count ?? (selectedKB.files?.filter(f => f.is_embedded).length ?? 0)
+                    const embModel = selectedKB.embedding_model || selectedKB.config?.embeddingModel || 'Not indexed'
+                    const embDims = selectedKB.embedding_dimensions
+                    const vecDb = selectedKB.vector_db || selectedKB.config?.vectorDb || 'chroma'
+                    const lastEmbedded = selectedKB.last_embedded_at
+                    return (
+                      <>
+                        {/* Storage & Size */}
+                        <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
+                          <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            Storage
+                          </div>
+                          <div className="text-xs font-bold text-[var(--text)] truncate">{totalSize > 0 ? fmt(totalSize) : 'Empty'}</div>
+                          <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{fileCount} file{fileCount !== 1 ? 's' : ''} · {fmtNum(totalChunks)} chunk{totalChunks !== 1 ? 's' : ''} · {fmtNum(totalTokens)} token{totalTokens !== 1 ? 's' : ''}</div>
+                        </div>
 
-                  <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
-                    <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      Embedding Model
-                    </div>
-                    <div className="text-xs font-bold text-[var(--text)] truncate">{selectedKB.embedding_model || 'Not indexed'}</div>
-                    <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">{selectedKB.embedding_dimensions ? `${selectedKB.embedding_dimensions} dimensions` : 'Dimensions unknown'}</div>
-                  </div>
+                        {/* Embedding / Index Status */}
+                        <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
+                          <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            {fileCount > 0 && embeddedCount === fileCount ? 'Indexed' : embeddedCount > 0 ? 'Partially Indexed' : 'Index Status'}
+                          </div>
+                          <div className="text-xs font-bold text-[var(--text)] truncate">{embModel}</div>
+                          <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">
+                            {embDims ? `${embDims} dimensions` : ''}
+                            {embDims && vecDb ? ' · ' : ''}
+                            {vecDb ? vecDb.charAt(0).toUpperCase() + vecDb.slice(1) : ''}
+                            {lastEmbedded ? ` · ${fmtAgo(lastEmbedded)}` : ''}
+                          </div>
+                        </div>
 
-                  <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
-                    <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                      Added
-                    </div>
-                    <div className="text-xs font-bold text-[var(--text)] truncate">{new Date(selectedKB.created_at * 1000).toLocaleString()}</div>
-                    <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">ID: {selectedKB.id.substring(0, 8)}...</div>
-                  </div>
+                        {/* Created / Updated */}
+                        <div className="p-3 rounded-lg border bg-[var(--surface)] transition-all hover:shadow-sm" style={{ borderColor: 'var(--border)' }}>
+                          <div className="text-[10px] uppercase font-bold text-[var(--text-tertiary)] mb-1 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            Timeline
+                          </div>
+                          <div className="text-xs font-bold text-[var(--text)] truncate">Created {fmtDate(selectedKB.created_at)}</div>
+                          <div className="text-[10px] text-[var(--text-tertiary)] truncate mt-0.5">Updated {fmtAgo(selectedKB.updated_at)} · ID: {selectedKB.id.substring(0, 8)}</div>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
                 
                 <SettingsPanel

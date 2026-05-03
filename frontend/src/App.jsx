@@ -1,7 +1,7 @@
 // Root application component. Manages page routing, global state, and coordinates
 // between chat, notes, knowledge bases, search, documentation, and settings views.
 // Uses a custom useChat hook for all backend communication and session management.
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import ChatMessage from './components/ChatMessage'
@@ -9,6 +9,7 @@ import ChatInput from './components/ChatInput'
 
 import SearchPage from './components/SearchPage'
 import SettingsPage from './components/SettingsPage'
+import CioAgentPage from './components/CioAgentPage'
 import FollowUpPrompts from './components/FollowUpPrompts'
 import ArtifactsPanel from './components/ArtifactsPanel'
 import SearchModal from './components/SearchModal'
@@ -31,17 +32,8 @@ import {
   NotesIcon,
   DocumentationIcon,
   SettingsIcon,
+  BrainIcon,
 } from './components/common/Icons'
-
-// Navigation pages shown in the sidebar. Each has an id (used for routing), label, icon, and component key.
-const PAGES = [
-  { id: 'search', label: 'Search Gate', icon: <SearchIcon size={18} />, component: 'search' },
-  { id: 'chat', label: 'Chat', icon: <ChatIcon size={18} />, component: 'chat' },
-  { id: 'knowledge', label: 'Knowledge Bases', icon: <KnowledgeIcon size={18} />, component: 'knowledge' },
-  { id: 'notes', label: 'Notes', icon: <NotesIcon size={18} />, component: 'notes' },
-  { id: 'documentation', label: 'Docs', icon: <DocumentationIcon size={18} />, component: 'documentation' },
-  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} />, component: 'settings' },
-]
 
 // Inner app component wrapped by ThemeProvider. Contains all page routing, state management,
 // and action handlers for chat messages, sessions, follow-ups, and modals.
@@ -125,6 +117,7 @@ function AppInner() {
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [cioProcessing, setCioProcessing] = useState(false)
+  const [cioAvailable, setCioAvailable] = useState(false)
   const messagesEndRef = useRef(null)
   const chatInputRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -140,6 +133,37 @@ function AppInner() {
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', JSON.stringify(sidebarCollapsed))
   }, [sidebarCollapsed])
+
+  // Check CIO Agent availability on mount
+  useEffect(() => {
+    const checkCioAvailability = async () => {
+      try {
+        const response = await fetch('/api/cio-agent/status')
+        setCioAvailable(response.ok)
+      } catch {
+        setCioAvailable(false)
+      }
+    }
+    checkCioAvailability()
+  }, [])
+
+  // Dynamic pages — includes CIO Agent only when the service is available
+  const PAGES = useMemo(() => {
+    const pages = [
+      { id: 'search', label: 'Search Gate', icon: <SearchIcon size={18} />, component: 'search' },
+      { id: 'chat', label: 'Chat', icon: <ChatIcon size={18} />, component: 'chat' },
+      { id: 'knowledge', label: 'Knowledge Bases', icon: <KnowledgeIcon size={18} />, component: 'knowledge' },
+    ]
+    if (cioAvailable) {
+      pages.push({ id: 'cioagent', label: 'CIO Agent', icon: <BrainIcon size={18} />, component: 'cioagent' })
+    }
+    pages.push(
+      { id: 'notes', label: 'Notes', icon: <NotesIcon size={18} />, component: 'notes' },
+      { id: 'documentation', label: 'Docs', icon: <DocumentationIcon size={18} />, component: 'documentation' },
+      { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} />, component: 'settings' },
+    )
+    return pages
+  }, [cioAvailable])
 
   // Fetch all knowledge bases from the backend
   const loadKnowledgeBases = useCallback(async () => {
@@ -183,6 +207,8 @@ function AppInner() {
     if (path === '/' || path === '/search') {
       setActivePage('search')
       window.history.replaceState({}, '', '/search')
+    } else if (path === '/cio-agent') {
+      setActivePage('cioagent')
     }
   }, [])
 
@@ -334,7 +360,7 @@ function AppInner() {
       }
     }
     setActivePage(pageId)
-    const pathMap = { search: '/search', chat: '/chat', knowledge: '/knowledge', notes: '/notes', documentation: '/docs', settings: '/settings' }
+    const pathMap = { search: '/search', chat: '/chat', knowledge: '/knowledge', cioagent: '/cio-agent', notes: '/notes', documentation: '/docs', settings: '/settings' }
     window.history.replaceState({}, '', pathMap[pageId] || '/')
   }
 
@@ -728,8 +754,13 @@ function AppInner() {
                 window.dispatchEvent(new CustomEvent('open-note-from-url', { detail: { noteId } }))
               }, 100)
             }}
-            onNavigateToKnowledge={() => {
+            onNavigateToKnowledge={(kbId, fileId) => {
               setActivePage('knowledge')
+              if (fileId) {
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('open-kb-file-from-url', { detail: { kbId, fileId } }))
+                }, 200)
+              }
             }}
           />
         ) : activePage === 'documentation' ? (
@@ -738,14 +769,19 @@ function AppInner() {
           <KnowledgeBase onRefresh={loadKnowledgeBases} models={models} />
         ) : activePage === 'notes' ? (
           <Notes />
+        ) : activePage === 'cioagent' ? (
+          <CioAgentPage
+            config={config}
+            onSave={saveConfig}
+            cioProcessing={cioProcessing}
+            setCioProcessing={setCioProcessing}
+          />
         ) : activePage === 'settings' ? (
           <SettingsPage
             config={config}
             onSave={saveConfig}
             models={models}
             onRefreshModels={refreshModels}
-            cioProcessing={cioProcessing}
-            setCioProcessing={setCioProcessing}
           />
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">

@@ -9,7 +9,7 @@ import {
   ClockIcon,
   TagIcon,
   FileTextIcon,
-  FilterIcon,
+  ExternalLinkIcon,
 } from './common/Icons'
 
 const NOTE_TYPE_LABELS = {
@@ -51,6 +51,25 @@ const highlightMatch = (text, query) => {
   )
 }
 
+const ResultLinkIndicator = ({ type }) => {
+  const styles = {
+    chat: { bg: 'var(--accent-subtle)', color: 'var(--accent-primary)', label: 'Open Chat' },
+    note: { bg: 'rgba(34,197,94,0.12)', color: 'var(--success)', label: 'Open Note' },
+    knowledge: { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', label: 'Open KB' },
+    file: { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', label: 'Open File' },
+  }
+  const s = styles[type] || styles.chat
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+      style={{ background: s.bg, color: s.color }}
+    >
+      <ExternalLinkIcon size={10} />
+      {s.label}
+    </span>
+  )
+}
+
 const ChatResult = ({ result, query, onSelect }) => (
   <button
     onClick={() => onSelect('chat', result)}
@@ -65,8 +84,11 @@ const ChatResult = ({ result, query, onSelect }) => (
         <ChatIcon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
-          {highlightMatch(result.title || 'Untitled', query)}
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold truncate pr-2" style={{ color: 'var(--text)' }}>
+            {highlightMatch(result.title || 'Untitled', query)}
+          </div>
+          <ResultLinkIndicator type="chat" />
         </div>
         <div className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>
           {highlightMatch(result.snippet || '', query)}
@@ -103,8 +125,11 @@ const NoteResult = ({ result, query, onSelect }) => (
         <FileTextIcon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
-          {highlightMatch(result.title || 'Untitled', query)}
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold truncate pr-2" style={{ color: 'var(--text)' }}>
+            {highlightMatch(result.title || 'Untitled', query)}
+          </div>
+          <ResultLinkIndicator type="note" />
         </div>
         {result.snippet && (
           <div className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>
@@ -121,7 +146,7 @@ const NoteResult = ({ result, query, onSelect }) => (
               {tag}
             </span>
           ))}
-          <span className="text-[10px] flex items-center gap-1 ml-auto" style={{ color: 'var(--text-muted)' }}>
+          <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
             <ClockIcon size={12} />
             {formatTimeAgo(result.updated_at)}
           </span>
@@ -145,8 +170,11 @@ const KnowledgeResult = ({ result, query, onSelect }) => (
         <KnowledgeIcon size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
-          {highlightMatch(result.name || 'Untitled', query)}
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold truncate pr-2" style={{ color: 'var(--text)' }}>
+            {highlightMatch(result.name || 'Untitled', query)}
+          </div>
+          <ResultLinkIndicator type={result.target?.file_id ? 'file' : 'knowledge'} />
         </div>
         {(result.description || result.snippet) && (
           <div className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>
@@ -215,12 +243,14 @@ const SearchPage = ({ onNavigateToChat, onNavigateToNote, onNavigateToKnowledge 
   }, [query, performSearch])
 
   const handleResultSelect = (type, result) => {
-    if (type === 'chat' && result.session_id) {
+    // Prefer embedded target links when available
+    const target = result.target
+    if (type === 'chat') {
       onNavigateToChat?.(result.session_id, result.message_index)
-    } else if (type === 'note' && result.id) {
-      onNavigateToNote?.(result.id)
-    } else if (type === 'knowledge' && result.id) {
-      onNavigateToKnowledge?.(result.id)
+    } else if (type === 'note') {
+      onNavigateToNote?.(target?.note_id || result.id)
+    } else if (type === 'knowledge') {
+      onNavigateToKnowledge?.(target?.kb_id || result.id, target?.file_id)
     }
   }
 

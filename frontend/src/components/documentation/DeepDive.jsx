@@ -38,8 +38,8 @@ sequenceDiagram
     participant L as LLM Provider
     U->>F: Type message + optional KB ids
     F->>B: POST /api/chat {message, model, provider, kb_ids}
-    B->>B: Retrieve KB context (if kb_ids)
-    B->>B: Build messages array with system prompt
+    B->>B: Retrieve KB context (if kb_ids) - vector or GraphRAG
+    B->>B: Build messages array with system prompt + reasoning config
     B->>L: SSE streaming request
     L-->>B: Token stream
     B-->>F: Pass-through SSE
@@ -47,42 +47,69 @@ sequenceDiagram
     F-->>U: Live token display
   `
 
+  const agenticFlow = `
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant B as Backend
+    participant L as LLM
+    U->>F: Send message with agent mode
+    F->>B: POST /api/chat/agent
+    B->>L: Stream with tools context
+    L-->>B: Tool call detected (search_web / fetch_url / notes)
+    B->>B: Execute tool
+    B->>B: Append tool results to messages
+    B->>L: Continue stream
+    L-->>B: Final response
+    B-->>F: Full response + tool results
+    F-->>U: Render with citations
+  `
+
   const ragFlow = `
 graph LR
     A[User Query] --> B{KB Selected?}
-    B -->|Yes| C[Retrieve Top-K Chunks]
-    B -->|No| D[Direct LLM Call]
-    C --> E[Inject Context into Prompt]
-    E --> F[LLM Generates Response]
-    D --> F
-    F --> G[Stream to User]
+    B -->|Yes| C{KB Type?}
+    C -->|vectorstore| D[Retrieve Top-K Chunks]
+    C -->|graphrag| E[Graph Search: local/global/hybrid/path/neighborhood]
+    D --> F[Inject Context into Prompt]
+    E --> F
+    B -->|No| G[Direct LLM Call]
+    F --> H[LLM Generates Response]
+    G --> H
+    H --> I[Stream to User]
   `
 
   const graphragFlow = `
 graph TB
     subgraph Ingestion
         A[Raw Documents] --> B[Text Chunking]
-        B --> C[Entity Extraction LLM]
+        B --> C[Batch Entity Extraction LLM]
         C --> D[Relationship Extraction]
     end
     subgraph Graph Build
         D --> E[Build networkx Graph]
-        E --> F[Community Detection louvain]
-        F --> G[Summarize Communities LLM]
+        E --> F[Fuzzy Entity Resolution]
+        F --> G[Community Detection louvain]
+        G --> H[Summarize Communities LLM]
     end
     subgraph Retrieval
-        H[User Query] --> I{Search Mode}
-        I -->|Local| J[Extract Query Entities]
-        I -->|Global| K[Embed Query Vector]
-        J --> L[Graph BFS Traversal]
-        K --> M[Rank Community Summaries]
-        L --> N[Retrieve Neighbors + Chunks]
-        M --> N
+        I[User Query] --> J{Search Mode}
+        J -->|Local| K[Extract Query Entities]
+        J -->|Global| L[Embed Query Vector]
+        J -->|Hybrid| M[Vector + Graph BFS]
+        J -->|Path| N[Shortest Path]
+        J -->|Neighborhood| O[Direct Neighbors]
+        K --> P[Graph BFS Traversal + Chunks]
+        L --> Q[Rank Community Summaries]
+        P --> R[LLM Response with Graph Context]
+        Q --> R
+        M --> R
+        N --> R
+        O --> R
     end
-    G --> O[Persist graph.json]
-    O --> L
-    O --> M
-    N --> P[LLM Response with Graph Context]
+    H --> S[Persist graph.json + index.json]
+    S --> P
+    S --> Q
   `
 
   const reasoningFlow = `
@@ -133,15 +160,17 @@ graph TB
     B --> E[Previous 7 Days]
     B --> F[Previous 30 Days]
     B --> G[Archived]
-    A --> H[SQLite FTS5 Index]
-    H --> I[Cmd+K Search Modal]
+    A --> H[In-Memory Search Index]
+    H --> I[Cmd+K / Search Page]
     I --> J[Fuzzy Match Titles]
     I --> K[Full-Text Content]
     I --> L[Tag Filter]
-    J --> M[Click Result]
-    K --> M
-    L --> M
-    M --> N[Load Session]
+    I --> M[Unified: Notes + KBs]
+    J --> N[Click Result]
+    K --> N
+    L --> N
+    M --> N
+    N --> O[Load Session / Note / KB]
   `
 
   const notesFlow = `
@@ -150,15 +179,16 @@ graph LR
     A --> C[AI Enhance Button]
     A --> D[Chat Drawer Toggle]
     A --> E[Pin / Export]
-    C --> F{Text Selected?}
-    F -->|Yes| G[Enhance Selection]
-    F -->|No| H[Enhance Full Note]
-    G --> I[POST /api/notes/enhance SSE]
-    H --> I
-    I --> J[Stream rewritten text]
-    D --> K[Slide-over Mini Chat]
-    K --> L[Inject note as system context]
-    E --> M[Download txt/md/pdf]
+    A --> F[12 Note Types]
+    C --> G{Text Selected?}
+    G -->|Yes| H[Enhance Selection]
+    G -->|No| I[Enhance Full Note]
+    H --> J[POST /api/notes/enhance SSE]
+    I --> J
+    J --> K[Stream rewritten text]
+    D --> L[Slide-over Mini Chat]
+    L --> M[Inject note as system context]
+    E --> N[Download txt/md via backend + pdf via html2pdf.js]
   `
 
   const isolationFlow = `
@@ -184,12 +214,43 @@ sequenceDiagram
     participant B as Backend
     participant S as Sandbox
     U->>F: Clicks "Run Code" on code block
-    F->>B: POST /api/execute {language, code}
-    B->>B: Validate language (python/js)
-    B->>S: Spawn isolated subprocess
-    S-->>B: stdout/stderr
-    B-->>F: Execution result
+    F->>B: POST /api/execute {code, session_id}
+    B->>B: Validate language
+    B->>S: Spawn isolated subprocess (60s timeout)
+    S-->>B: stdout/stderr/images (base64 PNG)
+    B-->>F: Execution result JSON
     F-->>U: Render output below code block
+  `
+
+  const providerFlow = `
+graph TB
+    A[User] --> B[Settings Page]
+    B --> C[Add Provider]
+    C --> D{Provider Type}
+    D -->|Ollama| E[Name + Base URL]
+    D -->|OpenAI| F[Name + Base URL + API Key]
+    D -->|Anthropic| G[Name + API Key]
+    E --> H[Save Config]
+    F --> H
+    G --> H
+    H --> I[Provider Config Saved to JSON]
+    I --> J[chat.py routes to provider adapter]
+    J --> K[vectorstore.py: ProviderEmbeddings]
+  `
+
+  const webSearchFlow = `
+graph LR
+    A[User Query] --> B{Provider?}
+    B -->|DuckDuckGo| C[HTML Parse - No API key]
+    B -->|SerpAPI| D[Google/Bing - API key]
+    B -->|SearXNG| E[Self-hosted - Base URL]
+    C --> F[Results list]
+    D --> F
+    E --> F
+    F --> G{Need full page?}
+    G -->|Yes| H[fetch_url - extract clean text]
+    G -->|No| I[Return snippets to LLM]
+    H --> I
   `
 
   return (
@@ -206,10 +267,11 @@ sequenceDiagram
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>SSE Streaming:</strong> Tokens arrive one-by-one for live rendering</li>
-              <li>• <strong>Multi-Provider:</strong> Backend normalizes Ollama, OpenAI, and Anthropic formats</li>
-              <li>• <strong>KB Context Injection:</strong> Retrieved chunks are prepended to the system prompt</li>
-              <li>• <strong>Session Persistence:</strong> Every message is stored with a session ID</li>
+              <li><strong>SSE Streaming:</strong> Tokens arrive one-by-one for live rendering</li>
+              <li><strong>Multi-Provider:</strong> Backend normalizes Ollama, OpenAI, and Anthropic formats</li>
+              <li><strong>KB Context Injection:</strong> Retrieved chunks prepended to system prompt. <code>rag_system_context</code> places RAG at position 0 for KV cache optimization</li>
+              <li><strong>Session Persistence:</strong> Every message stored with session ID, timestamps, and tree IDs</li>
+              <li><strong>Reasoning Config:</strong> Passed through to providers (Ollama think param, OpenAI reasoning effort)</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -219,18 +281,42 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="2. Knowledge Bases (Classic RAG)">
+      <AccordionItem title="2. Agentic Chat">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Classic RAG uses ChromaDB for vector storage. Documents are chunked, embedded, and stored. When a user queries with a KB selected, the backend embeds the query, retrieves top-K similar chunks, and injects them into the LLM context. Supports hybrid search (vector + keyword) and reranking.
+            Agentic chat (<code>/api/chat/agent</code>) lets models call tools. When a tool call is detected, the backend pauses streaming, executes the tool, appends results to the conversation, and continues. Available tools include web search (DuckDuckGo/SerpAPI/SearXNG), URL fetching, and notes CRUD.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Chunking:</strong> Configurable chunk_size and chunk_overlap</li>
-              <li>• <strong>Embedding:</strong> Uses the provider's embedding model (or default)</li>
-              <li>• <strong>Retrieval Modes:</strong> focused (top-K only) or full (all relevant chunks)</li>
-              <li>• <strong>KB Types:</strong> Notes, Documents, Web Search, API Sources, Vector DB</li>
+              <li><strong>Web Search:</strong> DuckDuckGo (no key), SerpAPI (API key), SearXNG (self-hosted)</li>
+              <li><strong>URL Fetch:</strong> Extracts clean text from HTML (strips scripts, styles, nav, footer, header, aside)</li>
+              <li><strong>Notes CRUD:</strong> Models can create, read, update, and delete notes autonomously</li>
+              <li><strong>Source Attribution:</strong> All tool results include formatted markdown citations</li>
+            </ul>
+          </div>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Agentic Flow</h4>
+            <MermaidDiagram chart={agenticFlow} />
+          </div>
+        </div>
+      </AccordionItem>
+
+      <AccordionItem title="3. Knowledge Bases (Classic RAG)">
+        <div className="space-y-3">
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            Classic RAG uses a pluggable vector store backend (ChromaDB by default, Qdrant optional) for vector storage. Documents are chunked, embedded, and stored. When a user queries with a KB selected, the backend embeds the query, retrieves top-K similar chunks, and injects them into the LLM context. Supports hybrid search (vector + BM25 keyword) and CrossEncoder reranking. The vector store backend is selected per-KB in the Knowledge Base settings.
+          </p>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
+            <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <li><strong>Chunking:</strong> Configurable chunk_size and chunk_overlap via LangChain RecursiveCharacterTextSplitter</li>
+              <li><strong>Embedding:</strong> ProviderEmbeddings routes to Ollama (nomic-embed-text) or OpenAI (text-embedding-3-small)</li>
+              <li><strong>Vector Store:</strong> Pluggable backends — ChromaDB (default) or Qdrant, selected per-KB</li>
+              <li><strong>Hybrid Search:</strong> Vector similarity + BM25 keyword ranking via rank-bm25</li>
+              <li><strong>Reranking:</strong> CrossEncoder (ms-marco-MiniLM-L-6-v2) re-ranks top candidates</li>
+              <li><strong>Source Fetching:</strong> URL crawl, git clone, REST API, local directories, Notion, GitHub, GitLab</li>
+              <li><strong>KB Types:</strong> Notes, Documents, Web Search, API Sources, Vector DB, GraphRAG</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -240,24 +326,25 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="3. GraphRAG">
+      <AccordionItem title="4. GraphRAG">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            GraphRAG is a graph-based retrieval strategy that lives alongside classic vectorstore RAG. Each KB can be set to <code>kb_type: "graphrag"</code>. The pipeline extracts entities and relationships from chunks using the LLM, builds a networkx graph, detects communities via python-louvain, summarizes each community, and persists the graph. Supports multiple search modes: <strong>Local</strong> (entity BFS traversal), <strong>Global</strong> (community summary ranking), <strong>Hybrid</strong> (vector + graph), <strong>Path</strong> (shortest path between entities), and <strong>Neighborhood</strong> (direct neighbors only). Optional Neo4j persistence enables Cypher-based queries at scale.
+            GraphRAG is a graph-based retrieval strategy that lives alongside classic vectorstore RAG. Each KB can be set to <code>kb_type: &quot;graphrag&quot;</code>. The pipeline extracts entities and relationships from chunks using the LLM, builds a networkx graph, detects communities via python-louvain, summarizes each community, and persists the graph. Supports incremental updates (only re-processes changed chunks). Optional Neo4j persistence and official neo4j-graphrag backend.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Entity Extraction:</strong> LLM extracts named entities with types and descriptions</li>
-              <li>• <strong>Relationship Extraction:</strong> LLM extracts subject-predicate-object triples</li>
-              <li>• <strong>Community Detection:</strong> python-louvain partitions the graph into clusters</li>
-              <li>• <strong>Community Summaries:</strong> Each partition summarized into a cohesive paragraph</li>
-              <li>• <strong>Local Search:</strong> Extract query entities → BFS traversal → neighbor retrieval</li>
-              <li>• <strong>Global Search:</strong> Embed query → rank community summaries by vector similarity</li>
-              <li>• <strong>Hybrid Search:</strong> Vector search to find starting chunks, then graph BFS from entities</li>
-              <li>• <strong>Path Search:</strong> Find shortest path between two entities in the graph</li>
-              <li>• <strong>Neighborhood Search:</strong> Direct neighbors only (depth=1) for quick lookups</li>
-              <li>• <strong>Neo4j Persistence:</strong> Optional, falls back to NetworkX JSON if unavailable</li>
+              <li><strong>Entity Extraction:</strong> LLM extracts named entities in batches</li>
+              <li><strong>Relationship Extraction:</strong> Subject-predicate-object triples with descriptions</li>
+              <li><strong>Fuzzy Entity Resolution:</strong> Jaccard-like token overlap merges near-duplicates</li>
+              <li><strong>Community Detection:</strong> python-louvain partitions graph into clusters</li>
+              <li><strong>Community Summarization:</strong> Parallel LLM summarization (max 5 concurrent)</li>
+              <li><strong>Community Embeddings:</strong> Summaries embedded for global search ranking</li>
+              <li><strong>Incremental Updates:</strong> Chunk hash deltas trigger selective re-extraction</li>
+              <li><strong>Progress Tracking:</strong> progress.json updated per phase for frontend polling</li>
+              <li><strong>5 Search Modes:</strong> Local, Global, Hybrid, Path, Neighborhood</li>
+              <li><strong>Neo4j Integration:</strong> Optional. Falls back to NetworkX JSON if unavailable</li>
+              <li><strong>Official Backend:</strong> Set GRAPHRAG_USE_OFFICIAL=true</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -267,20 +354,19 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="4. Reasoning / Thinking Models">
+      <AccordionItem title="5. Reasoning / Thinking Models">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            First-class support for reasoning models that output thinking tags. The backend auto-detects XML-like tags (<code>&lt;thinking&gt;</code>, <code>&lt;reason&gt;</code>, etc.) during SSE streaming, extracts reasoning content into a dedicated field, and the frontend renders it in a collapsible <code>ThinkingBlock</code> component. Supports custom tags, Ollama <code>think</code> parameter, and OpenAI reasoning effort levels.
+            First-class support for reasoning models that output thinking tags. Backend auto-detects XML-like tags during SSE streaming, extracts reasoning into a dedicated field, and the frontend renders it in a collapsible ThinkingBlock.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Tag Detection:</strong> Regex matches &lt;thinking&gt;, &lt;reason&gt;, &lt;reasoning&gt;, &lt;thought&gt;</li>
-              <li>• <strong>Extraction:</strong> reasoning field on ChatMessage, separate from content</li>
-              <li>• <strong>Collapsible UI:</strong> ThinkingBlock component with expand/collapse</li>
-              <li>• <strong>Streaming Detection:</strong> Real-time tag detection during SSE</li>
-              <li>• <strong>Custom Tags:</strong> Configurable start/end tags in Settings</li>
-              <li>• <strong>Ollama Think:</strong> Native think parameter support</li>
+              <li><strong>Tag Detection:</strong> Regex matches &lt;thinking&gt;, &lt;reason&gt;, &lt;reasoning&gt;, &lt;thought&gt;, &lt;|begin_of_thought|&gt;</li>
+              <li><strong>Extraction:</strong> reasoning field on ChatMessage, separate from content</li>
+              <li><strong>Collapsible UI:</strong> ThinkingBlock component with expand/collapse</li>
+              <li><strong>Custom Tags:</strong> Configurable start/end tags in Settings</li>
+              <li><strong>Ollama Think:</strong> Native think parameter support</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -290,18 +376,18 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="5. Follow-Up Prompts">
+      <AccordionItem title="6. Follow-Up Prompts">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            After each assistant response completes, the frontend optionally calls <code>POST /api/followups/generate</code> to get 3 contextual follow-up questions. These appear as clickable chips below the message. Clicking can either send immediately or insert into the input field for editing, based on the <code>followupInsertToInput</code> setting.
+            After each assistant response completes, the frontend calls <code>POST /api/followups/generate</code> to get 3 contextual follow-up questions. These appear as clickable chips below the message.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Auto-Generation:</strong> Triggered after streaming if enabled</li>
-              <li>• <strong>Ephemeral:</strong> Not persisted to disk, stored in React state only</li>
-              <li>• <strong>Settings:</strong> autoGenerate, keepInChat, insertToInput</li>
-              <li>• <strong>Regenerate:</strong> Circular arrow to get fresh suggestions</li>
+              <li><strong>Auto-Generation:</strong> Triggered after streaming if enabled</li>
+              <li><strong>Ephemeral:</strong> Not persisted to disk</li>
+              <li><strong>Settings:</strong> autoGenerate, keepInChat, insertToInput</li>
+              <li><strong>Regenerate:</strong> Circular arrow to get fresh suggestions</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -311,19 +397,18 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="6. Artifacts">
+      <AccordionItem title="7. Artifacts">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Artifacts detect standalone renderable content (HTML, SVG, ThreeJS, D3.js) in model output and display it in a dedicated resizable panel docked to the right of chat. Each artifact tracks versions (v1, v2, v3...), supports instant version switching, and allows targeted updates via natural language prompts.
+            Artifacts detect standalone renderable content (HTML, SVG, ThreeJS, D3.js) in model output and display it in a dedicated resizable panel docked to the right of chat.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Detection:</strong> Regex checks for complete HTML, SVG, ThreeJS, D3.js</li>
-              <li>• <strong>Sandboxed:</strong> iframe with allow-scripts allow-same-origin</li>
-              <li>• <strong>Versioning:</strong> Max 10 versions, oldest dropped, instant switching</li>
-              <li>• <strong>Update Flow:</strong> Detect intent → append artifact context → LLM rewrite</li>
-              <li>• <strong>Settings:</strong> artifactsEnabled, artifactsPanelWidth, artifactsAutoOpen</li>
+              <li><strong>Detection:</strong> Regex checks for complete HTML, SVG, ThreeJS, D3.js</li>
+              <li><strong>Sandboxed:</strong> iframe with allow-scripts allow-same-origin</li>
+              <li><strong>Versioning:</strong> Max 10 versions, oldest dropped</li>
+              <li><strong>Update Flow:</strong> Natural language rewrite creates new version</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -333,22 +418,19 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="7. History & Search">
+      <AccordionItem title="8. History & Search">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Chat history is grouped by time period (Today, Yesterday, Previous 7/30 Days, Archived) in the sidebar. Sessions have auto-generated titles (≤50 chars), unread indicators, and inline title editing. Global fuzzy search via Cmd+K uses SQLite FTS5 for full-text search across titles and message content, plus Levenshtein distance for title matching. Agentic search tools (<code>search_chats</code>, <code>view_chat</code>) are exposed via <code>/api/tools</code> for models with native function calling.
+            Chat history is grouped by time period in the sidebar. Unified search via Cmd+K and Search Gate page supports fuzzy searching across chats, notes, and knowledge bases.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Time Grouping:</strong> Sidebar organizes by recency</li>
-              <li>• <strong>Auto Titles:</strong> Generated on first user message (≤50 chars)</li>
-              <li>• <strong>FTS5:</strong> Full-text search on titles and message content</li>
-              <li>• <strong>Fuzzy Matching:</strong> Levenshtein distance for title similarity</li>
-              <li>• <strong>Export/Import:</strong> JSON format for session backup/restore</li>
-              <li>• <strong>Agentic Tools:</strong> search_chats and view_chat via /api/tools</li>
-              <li>• <strong>Unread Indicators:</strong> Magenta/red dot for unread sessions</li>
-              <li>• <strong>Inline Editing:</strong> Click pencil icon to rename sessions</li>
+              <li><strong>Time Grouping:</strong> Today, Yesterday, Previous 7/30 Days, Archived</li>
+              <li><strong>Auto Titles:</strong> Generated on first user message (≤50 chars)</li>
+              <li><strong>Unified Search:</strong> /api/search/all returns chats, notes, and KBs</li>
+              <li><strong>Export/Import:</strong> JSON format for session backup/restore</li>
+              <li><strong>Message Tree:</strong> Edit, branch, fork, continue, regenerate, evaluate, delete</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -358,19 +440,21 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="8. Notes Enhancement">
+      <AccordionItem title="9. Notes Enhancement">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Notes are enhanced with AI-assisted writing, a Markdown formatting toolbar, a slide-over chat drawer for AI conversation about note content, pinning, and export to txt/md/pdf. The enhance feature uses a separate provider/model config and streams the rewritten text via SSE.
+            Notes are enhanced with 12 note types, AI-assisted writing, a Markdown formatting toolbar, a slide-over chat drawer for AI conversation about note content, pinning, and export to txt/md/pdf. The enhance feature uses a separate provider/model config and streams the rewritten text via SSE.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>AI Enhance:</strong> Presets: Make Concise, Expand, Improve, Fix Grammar</li>
-              <li>• <strong>Formatting Toolbar:</strong> Bold, Italic, Code, Headers, Lists, Blockquote</li>
-              <li>• <strong>Chat Drawer:</strong> Mini chat with note content as system context</li>
-              <li>• <strong>Export:</strong> txt/md via backend, pdf via html2pdf.js frontend</li>
-              <li>• <strong>Pinning:</strong> Pinned notes float to top of sidebar</li>
+              <li><strong>12 Note Types:</strong> rich, simple, voice, meeting, research, project, daily, documentation, bug, feature, recipe, book</li>
+              <li><strong>AI Enhance:</strong> Presets: Make Concise, Expand, Improve, Fix Grammar</li>
+              <li><strong>Formatting Toolbar:</strong> Bold, Italic, Code, Headers, Lists, Blockquote, Strikethrough</li>
+              <li><strong>Chat Drawer:</strong> Mini chat with note content as system context (ephemeral)</li>
+              <li><strong>Export:</strong> txt/md via backend, pdf via html2pdf.js frontend</li>
+              <li><strong>Pinning:</strong> Pinned notes float to top of sidebar</li>
+              <li><strong>Agentic Tools:</strong> Models can create, read, update, delete notes autonomously</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -380,7 +464,7 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="9. KB Chat Isolation">
+      <AccordionItem title="10. KB Chat Isolation">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
             Conversations initiated within a Knowledge Base are strictly isolated. When a user opens chat from a KB, a session is created with <code>knowledge_base_id</code> set. All messages in that session are tagged to the KB. The frontend and backend enforce that KB-scoped sessions never appear in main chat history, and main chat never leaks into KB conversations.
@@ -388,11 +472,11 @@ sequenceDiagram
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Session Scope:</strong> Each session has knowledge_base_id (UUID or null)</li>
-              <li>• <strong>Backend Filter:</strong> /api/history accepts kb_id param, filters server-side</li>
-              <li>• <strong>Frontend Separation:</strong> KB chat UI separate from main chat UI</li>
-              <li>• <strong>Navigation Guard:</strong> Switching pages clears KB-scoped state</li>
-              <li>• <strong>No Cross-Leak:</strong> KB chat history excluded from main session list</li>
+              <li><strong>Session Scope:</strong> Each session has knowledge_base_id (UUID or null)</li>
+              <li><strong>Backend Filter:</strong> /api/history accepts kb_id param, filters server-side</li>
+              <li><strong>Frontend Separation:</strong> KB chat UI separate from main chat UI</li>
+              <li><strong>Navigation Guard:</strong> Switching pages clears KB-scoped state</li>
+              <li><strong>No Cross-Leak:</strong> KB chat history excluded from main session list</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -402,23 +486,69 @@ sequenceDiagram
         </div>
       </AccordionItem>
 
-      <AccordionItem title="10. Code Execution">
+      <AccordionItem title="11. Code Execution">
         <div className="space-y-3">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Code blocks in chat messages have a "Run Code" button that sends the code to the backend for sandboxed execution. The backend validates the language, spawns an isolated subprocess with timeouts and resource limits, captures stdout/stderr, and returns the result. Currently supports Python and JavaScript.
+            Code blocks in chat messages have a "Run Code" button that sends the code to the backend for sandboxed execution. The backend validates the language, spawns an isolated subprocess with timeouts and resource limits, captures stdout/stderr (with matplotlib figure auto-capture), and returns the result.
           </p>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
             <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <li>• <strong>Sandboxed:</strong> Isolated subprocess with timeouts</li>
-              <li>• <strong>Language Support:</strong> Python and JavaScript</li>
-              <li>• <strong>Safety:</strong> Resource limits and output truncation</li>
-              <li>• <strong>Inline Results:</strong> Output rendered below the code block</li>
+              <li><strong>Sandboxed:</strong> Isolated subprocess with timeouts (default 60s)</li>
+              <li><strong>Python Support:</strong> Full Python execution with matplotlib figure capture as base64 PNG</li>
+              <li><strong>Session State:</strong> Jupyter-style session management with variable persistence</li>
+              <li><strong>Output:</strong> stdout, stderr, images (base64 PNG), and return value</li>
+              <li><strong>Safety:</strong> Resource limits, output truncation (1MB max)</li>
             </ul>
           </div>
           <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Execution Flow</h4>
             <MermaidDiagram chart={codeExecFlow} />
+          </div>
+        </div>
+      </AccordionItem>
+
+      <AccordionItem title="12. Multi-Provider System">
+        <div className="space-y-3">
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            The backend uses a multi-provider architecture where each provider has its own credentials and endpoints. Provider configs are saved to ~/.cio-intelligence-hub/config.json. When listing models or sending messages, the backend iterates all active providers, calls their respective APIs, and normalizes the streaming format.
+          </p>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
+            <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <li><strong>Provider Registry:</strong> Each provider has id, name, type, base_url, api_key, is_active</li>
+              <li><strong>Masked Keys:</strong> API keys shown as ******** in config responses</li>
+              <li><strong>Docker Override:</strong> OLLAMA_BASE_URL env var overrides localhost providers in Docker</li>
+              <li><strong>Embedding Routing:</strong> ProviderEmbeddings switches between OllamaEmbeddings and OpenAIEmbeddings</li>
+              <li><strong>Provider Files:</strong> ollama.py, openai.py, anthropic.py each handle auth and streaming format</li>
+            </ul>
+          </div>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Provider Flow</h4>
+            <MermaidDiagram chart={providerFlow} />
+          </div>
+        </div>
+      </AccordionItem>
+
+      <AccordionItem title="13. Web Search">
+        <div className="space-y-3">
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            Native web search is integrated as an agentic tool. Three providers are supported: DuckDuckGo (free, no API key), SerpAPI (paid, supports Google/Bing), and SearXNG (self-hosted meta-search). URL fetching extracts clean text from HTML pages for direct LLM context.
+          </p>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Key Concepts</h4>
+            <ul className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <li><strong>DuckDuckGo:</strong> HTML parsing, no API key required</li>
+              <li><strong>SerpAPI:</strong> Google/Bing results via paid API key</li>
+              <li><strong>SearXNG:</strong> Self-hosted meta-search aggregator</li>
+              <li><strong>URL Fetch:</strong> Extract clean text from HTML (strips scripts, styles, nav, footer, header, aside)</li>
+              <li><strong>Max Length:</strong> Up to 50,000 characters per fetched page</li>
+              <li><strong>Source Attribution:</strong> Auto-formatted markdown citations</li>
+            </ul>
+          </div>
+          <div className="p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--text)' }}>Web Search Flow</h4>
+            <MermaidDiagram chart={webSearchFlow} />
           </div>
         </div>
       </AccordionItem>

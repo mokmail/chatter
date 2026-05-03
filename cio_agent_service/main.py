@@ -1,7 +1,7 @@
-"""CIO Agent - Code analysis and improvement suggestion system.
+"""CIO Agent Service - Standalone container for code analysis.
 
-When enabled by admin, analyzes codebase and provides actionable suggestions
-for functionality, documentation, refactoring, and enhancements.
+This service provides the CIO Agent functionality as a separate container
+that can be optionally started alongside the main application.
 """
 import json
 import csv
@@ -9,19 +9,27 @@ import io
 import uuid
 import asyncio
 import hashlib
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Body, Query
+from fastapi import FastAPI, HTTPException, Body, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
-from config import get_config, update_config, Config
-from code_analyzer import CodeAnalyzer, Suggestion, analyze_codebase
+from code_analyzer import CodeAnalyzer, Suggestion
 
+app = FastAPI(title="CIO Agent Service", description="Code analysis and improvement suggestion system")
 
-router = APIRouter(prefix="/api/cio-agent", tags=["cio-agent"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SUGGESTIONS_FILE = Path.home() / ".cio-intelligence-hub" / "cio_suggestions.json"
 SCAN_HISTORY_FILE = Path.home() / ".cio-intelligence-hub" / "cio_scan_history.json"
@@ -29,8 +37,7 @@ SCAN_HISTORY_FILE = Path.home() / ".cio-intelligence-hub" / "cio_scan_history.js
 _analysis_cancelled = False
 _analysis_in_progress = False
 
-DEFAULT_CIO_TARGET_DIR = Path(__file__).parent.parent.resolve()
-
+DEFAULT_CIO_TARGET_DIR = Path(os.environ.get("CIO_TARGET_DIR", "/workspace"))
 
 class ToggleRequest(BaseModel):
     enabled: bool
@@ -41,7 +48,6 @@ class ToggleRequest(BaseModel):
     exclude_files: list[str] | None = None
     target_dir: str | None = None
 
-
 class AnalyzeRequest(BaseModel):
     include_tests: bool | None = None
     include_understanding: bool | None = None
@@ -49,16 +55,13 @@ class AnalyzeRequest(BaseModel):
     exclude_files: list[str] | None = None
     target_dir: str | None = None
 
-
 class BatchUpdateRequest(BaseModel):
     suggestion_ids: list[str]
     status: str
     note: str | None = None
 
-
 class BatchApplyRequest(BaseModel):
     suggestion_ids: list[str]
-
 
 def _load_suggestions() -> list[dict]:
     if SUGGESTIONS_FILE.exists():
@@ -69,12 +72,10 @@ def _load_suggestions() -> list[dict]:
             return []
     return []
 
-
 def _save_suggestions(suggestions: list[dict]) -> None:
     SUGGESTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(SUGGESTIONS_FILE, 'w') as f:
         json.dump(suggestions, f, indent=2)
-
 
 def _load_scan_history() -> list[dict]:
     if SCAN_HISTORY_FILE.exists():
@@ -85,18 +86,15 @@ def _load_scan_history() -> list[dict]:
             return []
     return []
 
-
 def _save_scan_history(history: list[dict]) -> None:
     SCAN_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(SCAN_HISTORY_FILE, 'w') as f:
         json.dump(history, f, indent=2)
 
-
 def _dedup_key(s: dict) -> str:
     return hashlib.md5(
         f"{s.get('file_path','')}:{s.get('line_start',0)}:{s.get('title','')}".encode()
     ).hexdigest()
-
 
 def _deduplicate_suggestions(suggestions: list[dict]) -> list[dict]:
     seen = {}
@@ -111,7 +109,6 @@ def _deduplicate_suggestions(suggestions: list[dict]) -> list[dict]:
             elif s.get('timestamp', '') > existing.get('timestamp', ''):
                 seen[key] = s
     return list(seen.values())
-
 
 def _suggestion_to_dict(s: Suggestion) -> dict:
     result = {
@@ -148,14 +145,7 @@ def _suggestion_to_dict(s: Suggestion) -> dict:
         result["insight_type"] = s.insight_type
     return result
 
-
-def _config_to_status(cfg: Config) -> dict:
-    target = cfg.cio_agent_target_dir
-    if target:
-        resolved_target = str(Path(target).resolve())
-    else:
-        resolved_target = str(DEFAULT_CIO_TARGET_DIR)
-    
+def _config_to_status() -> dict:
     suggestions = _load_suggestions()
     pending = sum(1 for s in suggestions if s.get('status') == 'pending')
     understanding_count = sum(1 for s in suggestions if s.get('insight_type') == 'understanding')
@@ -168,21 +158,21 @@ def _config_to_status(cfg: Config) -> dict:
             understanding_categories[cat] = understanding_categories.get(cat, 0) + 1
 
     return {
-        "enabled": cfg.cio_agent_enabled,
-        "auto_scan": cfg.cio_agent_auto_scan,
-        "include_tests": cfg.cio_agent_include_tests,
-        "include_understanding": getattr(cfg, 'cio_agent_include_understanding', True),
-        "last_scan": cfg.cio_agent_last_scan,
-        "target_dir": resolved_target,
+        "enabled": True,
+        "auto_scan": False,
+        "include_tests": True,
+        "include_understanding": True,
+        "last_scan": None,
+        "target_dir": str(DEFAULT_CIO_TARGET_DIR),
         "suggestion_count": len(suggestions),
         "pending_count": pending,
         "improvement_count": improvement_count,
         "understanding_count": understanding_count,
         "understanding_categories": understanding_categories,
         "analysis_in_progress": _analysis_in_progress,
-        "version": "3.0.0"
+        "version": "3.0.0",
+        "container": "cio-agent"
     }
-
 
 def _record_scan(status: str, count: int, target_dir: str, error: str | None = None) -> None:
     history = _load_scan_history()
@@ -197,7 +187,6 @@ def _record_scan(status: str, count: int, target_dir: str, error: str | None = N
     if len(history) > 50:
         history = history[-50:]
     _save_scan_history(history)
-
 
 def _apply_code_change(s: dict, code_to_apply: str, target_dir: Path | None = None) -> dict:
     file_path = s.get('file_path')
@@ -240,34 +229,15 @@ def _apply_code_change(s: dict, code_to_apply: str, target_dir: Path | None = No
         "new_content": new_content
     }
 
-
-@router.get("/status")
+@app.get("/status")
 async def get_status():
-    cfg = get_config()
-    return _config_to_status(cfg)
+    return _config_to_status()
 
-
-@router.post("/toggle")
+@app.post("/toggle")
 async def toggle(request: ToggleRequest):
-    cfg = get_config()
-    update_data = {"cio_agent_enabled": request.enabled}
-    if request.auto_scan is not None:
-        update_data["cio_agent_auto_scan"] = request.auto_scan
-    if request.include_tests is not None:
-        update_data["cio_agent_include_tests"] = request.include_tests
-    if request.include_understanding is not None:
-        update_data["cio_agent_include_understanding"] = request.include_understanding
-    if request.exclude_dirs is not None:
-        update_data["cio_agent_exclude_dirs"] = request.exclude_dirs
-    if request.exclude_files is not None:
-        update_data["cio_agent_exclude_files"] = request.exclude_files
-    if request.target_dir is not None:
-        update_data["cio_agent_target_dir"] = request.target_dir
-    updated = update_config(**update_data)
-    return _config_to_status(updated)
+    return _config_to_status()
 
-
-@router.post("/stop")
+@app.post("/stop")
 async def stop_analysis():
     global _analysis_cancelled
     if not _analysis_in_progress:
@@ -275,8 +245,7 @@ async def stop_analysis():
     _analysis_cancelled = True
     return {"status": "stopping", "message": "Analysis stop requested"}
 
-
-@router.post("/purge")
+@app.post("/purge")
 async def purge_suggestions():
     global _analysis_cancelled
     _analysis_cancelled = True
@@ -285,8 +254,7 @@ async def purge_suggestions():
     _save_suggestions(kept)
     return {"status": "success", "message": f"Deleted {len(suggestions) - len(kept)} suggestions, kept {len(kept)}"}
 
-
-@router.get("/stats")
+@app.get("/stats")
 async def get_stats():
     suggestions = _load_suggestions()
     by_category = {}
@@ -331,8 +299,7 @@ async def get_stats():
         "scan_count": len(history)
     }
 
-
-@router.get("/files-summary")
+@app.get("/files-summary")
 async def get_files_summary():
     suggestions = _load_suggestions()
     file_map = {}
@@ -372,15 +339,13 @@ async def get_files_summary():
     files = sorted(file_map.values(), key=lambda x: -x["total"])
     return {"files": files, "total_files": len(files)}
 
-
-@router.get("/scan-history")
+@app.get("/scan-history")
 async def get_scan_history(limit: int = 20):
     history = _load_scan_history()
     history = history[-limit:]
     return {"scans": history, "total": len(_load_scan_history())}
 
-
-@router.get("/suggestions")
+@app.get("/suggestions")
 async def get_suggestions(
     category: str | None = None,
     status: str | None = None,
@@ -433,8 +398,7 @@ async def get_suggestions(
 
     return {"suggestions": suggestions, "total": total}
 
-
-@router.get("/suggestions/export")
+@app.get("/suggestions/export")
 async def export_suggestions(format: str = "json", status: str | None = None, category: str | None = None):
     suggestions = _load_suggestions()
     if status:
@@ -466,8 +430,7 @@ async def export_suggestions(format: str = "json", status: str | None = None, ca
         headers={"Content-Disposition": "attachment; filename=cio_suggestions.json"}
     )
 
-
-@router.get("/suggestion/{suggestion_id}")
+@app.get("/suggestion/{suggestion_id}")
 async def get_suggestion(suggestion_id: str):
     suggestions = _load_suggestions()
     for s in suggestions:
@@ -475,8 +438,7 @@ async def get_suggestion(suggestion_id: str):
             return s
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.patch("/suggestion/{suggestion_id}")
+@app.patch("/suggestion/{suggestion_id}")
 async def update_suggestion(suggestion_id: str, update: dict):
     suggestions = _load_suggestions()
     for i, s in enumerate(suggestions):
@@ -489,8 +451,7 @@ async def update_suggestion(suggestion_id: str, update: dict):
             return suggestions[i]
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.delete("/suggestions")
+@app.delete("/suggestions")
 async def delete_suggestions(purge_all: bool = False, status: str | None = None):
     suggestions = _load_suggestions()
     if purge_all:
@@ -508,8 +469,7 @@ async def delete_suggestions(purge_all: bool = False, status: str | None = None)
         _save_suggestions(kept)
         return {"status": "success", "message": f"Deleted {len(suggestions) - len(kept)} pending suggestions, kept {len(kept)}"}
 
-
-@router.post("/suggestions/batch")
+@app.post("/suggestions/batch")
 async def batch_update_suggestions(request: BatchUpdateRequest):
     if request.status not in ('applied', 'dismissed', 'adapted', 'pending'):
         raise HTTPException(status_code=400, detail=f"Invalid status: {request.status}")
@@ -532,8 +492,7 @@ async def batch_update_suggestions(request: BatchUpdateRequest):
     _save_suggestions(suggestions)
     return {"updated": len(updated), "not_found": len(not_found), "suggestions": updated}
 
-
-@router.post("/suggestions/batch-apply")
+@app.post("/suggestions/batch-apply")
 async def batch_apply_suggestions(request: BatchApplyRequest):
     suggestions = _load_suggestions()
     applied = []
@@ -564,8 +523,7 @@ async def batch_apply_suggestions(request: BatchApplyRequest):
     return {"applied": len(applied), "failed": len(failed), "not_found": len(not_found),
             "details": {"applied": applied, "failed": failed}}
 
-
-@router.post("/suggestion/{suggestion_id}/apply-adapted")
+@app.post("/suggestion/{suggestion_id}/apply-adapted")
 async def apply_adapted_suggestion(suggestion_id: str, adapted_code: str = Body(...)):
     suggestions = _load_suggestions()
     for i, s in enumerate(suggestions):
@@ -592,8 +550,7 @@ async def apply_adapted_suggestion(suggestion_id: str, adapted_code: str = Body(
 
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.post("/suggestion/{suggestion_id}/apply")
+@app.post("/suggestion/{suggestion_id}/apply")
 async def apply_suggestion(suggestion_id: str, adapted_code: str | None = Body(default=None)):
     suggestions = _load_suggestions()
     for i, s in enumerate(suggestions):
@@ -625,8 +582,7 @@ async def apply_suggestion(suggestion_id: str, adapted_code: str | None = Body(d
 
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.post("/suggestion/{suggestion_id}/revert")
+@app.post("/suggestion/{suggestion_id}/revert")
 async def revert_suggestion(suggestion_id: str):
     suggestions = _load_suggestions()
     for i, s in enumerate(suggestions):
@@ -680,8 +636,7 @@ async def revert_suggestion(suggestion_id: str):
 
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.post("/suggestion/{suggestion_id}/adapt")
+@app.post("/suggestion/{suggestion_id}/adapt")
 async def adapt_suggestion(suggestion_id: str, adapted_code: str = Body(...)):
     suggestions = _load_suggestions()
     for i, s in enumerate(suggestions):
@@ -694,25 +649,21 @@ async def adapt_suggestion(suggestion_id: str, adapted_code: str = Body(...)):
             return suggestions[i]
     raise HTTPException(status_code=404, detail="Suggestion not found")
 
-
-@router.post("/analyze")
+@app.post("/analyze")
 async def trigger_analysis(request: AnalyzeRequest | None = None):
-    cfg = get_config()
-    if not cfg.cio_agent_enabled:
-        raise HTTPException(status_code=400, detail="CIO Agent is not enabled")
+    global _analysis_cancelled, _analysis_in_progress
 
-    include_tests = request.include_tests if request and request.include_tests is not None else cfg.cio_agent_include_tests
-    include_understanding = request.include_understanding if request and request.include_understanding is not None else getattr(cfg, 'cio_agent_include_understanding', True)
-    exclude_dirs = request.exclude_dirs if request and request.exclude_dirs is not None else cfg.cio_agent_exclude_dirs
-    exclude_files = request.exclude_files if request and request.exclude_files is not None else cfg.cio_agent_exclude_files
-    target_dir = request.target_dir if request and request.target_dir else cfg.cio_agent_target_dir
+    include_tests = request.include_tests if request and request.include_tests is not None else True
+    include_understanding = request.include_understanding if request and request.include_understanding is not None else True
+    exclude_dirs = request.exclude_dirs if request and request.exclude_dirs is not None else None
+    exclude_files = request.exclude_files if request and request.exclude_files is not None else None
+    target_dir = request.target_dir if request and request.target_dir else str(DEFAULT_CIO_TARGET_DIR)
 
     code_root = target_dir if target_dir else str(DEFAULT_CIO_TARGET_DIR)
 
     asyncio.create_task(_run_analysis(code_root, include_tests, exclude_dirs, exclude_files, include_understanding))
 
     return {"status": "started", "message": "Analysis started in background", "target_dir": code_root, "include_understanding": include_understanding, "exclude_dirs": exclude_dirs, "exclude_files": exclude_files}
-
 
 async def _run_analysis(root_path: str, include_tests: bool = False, exclude_dirs: list[str] | None = None, exclude_files: list[str] | None = None, include_understanding: bool = True) -> list[dict]:
     global _analysis_in_progress, _analysis_cancelled
@@ -739,7 +690,6 @@ async def _run_analysis(root_path: str, include_tests: bool = False, exclude_dir
 
     return suggestions
 
-
 def _append_suggestion(suggestion: dict) -> None:
     SUGGESTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     existing = []
@@ -759,35 +709,16 @@ def _append_suggestion(suggestion: dict) -> None:
     with open(SUGGESTIONS_FILE, 'w') as f:
         json.dump(existing, f, indent=2)
 
-
-@router.get("/stream")
+@app.get("/stream")
 async def stream_analysis():
-    cfg = get_config()
-    if not cfg.cio_agent_enabled:
-        raise HTTPException(status_code=400, detail="CIO Agent is not enabled")
+    global _analysis_in_progress, _analysis_cancelled
 
-    # Resolve target directory with fallback
-    target_dir = cfg.cio_agent_target_dir
     code_root = str(DEFAULT_CIO_TARGET_DIR)
-    
-    if target_dir:
-        try:
-            potential_root = Path(target_dir).resolve()
-            if potential_root.exists():
-                code_root = str(potential_root)
-        except Exception:
-            pass
-
-    # Ensure code_root exists, otherwise use current working directory
-    if not Path(code_root).exists():
-        code_root = str(Path.cwd().resolve())
 
     async def generate():
         global _analysis_in_progress, _analysis_cancelled
         _analysis_in_progress = True
         _analysis_cancelled = False
-
-        update_config(cio_agent_last_scan=datetime.utcnow().isoformat())
 
         existing = _load_suggestions()
         kept = [s for s in existing if s.get('status') in ('applied', 'dismissed', 'adapted')]
@@ -796,11 +727,7 @@ async def stream_analysis():
         yield f"data: {json.dumps({'type': 'start', 'message': 'Starting analysis...', 'target_dir': code_root})}\n\n"
 
         count = 0
-        include_understanding = getattr(cfg, 'cio_agent_include_understanding', True)
-        analyzer = CodeAnalyzer(code_root, cfg.cio_agent_include_tests,
-                                exclude_dirs=cfg.cio_agent_exclude_dirs,
-                                exclude_files=cfg.cio_agent_exclude_files,
-                                include_understanding=include_understanding)
+        analyzer = CodeAnalyzer(code_root, True, exclude_dirs=None, exclude_files=None, include_understanding=True)
 
         files_to_analyze = analyzer.get_files_to_analyze()
         yield f"data: {json.dumps({'type': 'progress', 'message': f'Found {len(files_to_analyze)} files to analyze in {Path(code_root).name}'})}\n\n"
@@ -833,29 +760,23 @@ async def stream_analysis():
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
 
-
-@router.post("/analyze-and-save")
+@app.post("/analyze-and-save")
 async def analyze_and_save(include_tests: bool | None = None, include_understanding: bool | None = None):
-    cfg = get_config()
-    if not cfg.cio_agent_enabled:
-        raise HTTPException(status_code=400, detail="CIO Agent is not enabled")
+    global _analysis_in_progress, _analysis_cancelled
 
     if include_tests is None:
-        include_tests = cfg.cio_agent_include_tests
+        include_tests = True
     if include_understanding is None:
-        include_understanding = getattr(cfg, 'cio_agent_include_understanding', True)
+        include_understanding = True
 
-    code_root = cfg.cio_agent_target_dir if cfg.cio_agent_target_dir else str(DEFAULT_CIO_TARGET_DIR)
+    code_root = str(DEFAULT_CIO_TARGET_DIR)
 
     existing = _load_suggestions()
     kept = [s for s in existing if s.get('status') in ('applied', 'dismissed', 'adapted')]
     _save_suggestions(kept)
 
     count = 0
-    analyzer = CodeAnalyzer(code_root, include_tests,
-                            exclude_dirs=cfg.cio_agent_exclude_dirs,
-                            exclude_files=cfg.cio_agent_exclude_files,
-                            include_understanding=include_understanding)
+    analyzer = CodeAnalyzer(code_root, include_tests, exclude_dirs=None, exclude_files=None, include_understanding=include_understanding)
     try:
         async for suggestion in analyzer.analyze():
             count += 1
@@ -865,14 +786,17 @@ async def analyze_and_save(include_tests: bool | None = None, include_understand
         _record_scan("error", count, code_root, error=str(e))
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-    update_config(cio_agent_last_scan=datetime.utcnow().isoformat())
-
     return {
         "status": "complete",
         "count": count,
         "last_scan": datetime.utcnow().isoformat()
     }
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "cio-agent"}
 
-def register_routes(app):
-    app.include_router(router)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("CIO_AGENT_PORT", "8001"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

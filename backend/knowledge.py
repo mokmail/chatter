@@ -46,6 +46,10 @@ class KnowledgeBase(BaseModel):
     storage_path: str = ""
     embedding_model: str = ""
     embedding_dimensions: int = 0
+    last_embedded_at: float = 0.0
+    total_tokens: int = 0
+    total_chunks: int = 0
+    total_size_bytes: int = 0
     files: list[KBFile] = []
     config: dict = {}  # Type-specific config (embeddings path, API endpoint, etc.)
     created_at: float = time.time()
@@ -112,6 +116,9 @@ class KnowledgeStore:
     def update(self, kb: KnowledgeBase) -> KnowledgeBase:
         """Update a knowledge base."""
         kb.updated_at = time.time()
+        kb.total_tokens = sum(f.token_count for f in kb.files)
+        kb.total_chunks = sum(f.chunks_count for f in kb.files)
+        kb.total_size_bytes = sum(f.size_bytes for f in kb.files)
         self._save(kb)
         return kb
 

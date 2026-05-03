@@ -1,5 +1,6 @@
 """CIO Intelligence Hub - Open WebUI-inspired AI Chat Application."""
 import json
+import os
 import uuid
 import time
 from pathlib import Path
@@ -34,6 +35,7 @@ from knowledge import (
 )
 from reasoning import ReasoningConfig, extract_reasoning, serialize_reasoning
 from vectorstore import add_to_vectorstore, get_kb_embeddings, delete_vectorstore, delete_source_chunks, get_collection, retrieve_relevant_chunks
+from vector_stores import list_backends
 from graphrag_engine import (
     build_graph_for_kb,
     update_graph_for_kb,
@@ -53,7 +55,7 @@ from code_executor import execute_code, create_session, delete_session, get_sess
 from web_search import WEB_SEARCH_TOOLS, execute_web_tool, search_web, fetch_url
 from followups import generate_followups
 from artifacts import detect_artifact_content, create_artifact, get_artifact, get_current_artifact, update_artifact, get_artifact_versions, switch_artifact_version
-from cio_agent import register_routes as register_cio_agent_routes
+from adapters.cio_agent_adapter import register_cio_agent_proxy_routes
 
 
 app = FastAPI(title="CIO Intelligence Hub", description="Open WebUI-inspired AI Chat Application")
@@ -880,9 +882,15 @@ async def list_kb():
                 "retrieval_mode": kb.retrieval_mode,
                 "embedding_model": kb.embedding_model,
                 "embedding_dimensions": kb.embedding_dimensions,
+                "last_embedded_at": kb.last_embedded_at,
                 "storage_path": kb.storage_path,
                 "file_count": len(kb.files),
+                "embedded_count": sum(1 for f in kb.files if f.is_embedded),
+                "total_tokens": kb.total_tokens or sum(f.token_count for f in kb.files),
+                "total_chunks": kb.total_chunks or sum(f.chunks_count for f in kb.files),
+                "total_size_bytes": kb.total_size_bytes or sum(f.size_bytes for f in kb.files),
                 "config": kb.config,
+                "vector_db": kb.config.get("vectorDb", "chroma"),
                 "graph_status": get_graph_status(kb.id) if kb.kb_type == "graphrag" else None,
                 "created_at": kb.created_at,
                 "updated_at": kb.updated_at
@@ -896,23 +904,30 @@ async def create_kb(req: KBCreate):
     """Create a new knowledge base."""
     # Generate ID first so we can set storage path before initial save
     kb_id = str(uuid.uuid4())
-    storage_path = str(Path.home() / ".cio-intelligence-hub" / "knowledge" / f"{kb_id}")
-    
+    storage_path = str(Path.home() / ".cio-intelligence-hub" / "knowledge")
+
     # Create with the pre-generated ID
     kb = create_knowledge_base(req.name, req.description, req.kb_type, kb_id=kb_id)
-    
+
     # Now update fields that depend on the ID
     kb.storage_path = storage_path
     update_knowledge_base(kb)
     
     return {
-        "id": kb.id, 
-        "name": kb.name, 
-        "description": kb.description, 
-        "kb_type": kb.kb_type, 
+        "id": kb.id,
+        "name": kb.name,
+        "description": kb.description,
+        "kb_type": kb.kb_type,
         "storage_path": kb.storage_path,
-        "file_count": 0, 
-        "created_at": kb.created_at, 
+        "file_count": 0,
+        "embedded_count": 0,
+        "total_tokens": 0,
+        "total_chunks": 0,
+        "total_size_bytes": 0,
+        "embedding_model": "",
+        "embedding_dimensions": 0,
+        "last_embedded_at": 0.0,
+        "created_at": kb.created_at,
         "updated_at": kb.updated_at
     }
 
@@ -936,12 +951,18 @@ async def get_kb(kb_id: str):
         "storage_path": kb.storage_path,
         "embedding_model": kb.embedding_model,
         "embedding_dimensions": kb.embedding_dimensions,
+        "last_embedded_at": kb.last_embedded_at,
+        "total_tokens": kb.total_tokens or sum(f.token_count for f in kb.files),
+        "total_chunks": kb.total_chunks or sum(f.chunks_count for f in kb.files),
+        "total_size_bytes": kb.total_size_bytes or sum(f.size_bytes for f in kb.files),
+        "embedded_count": sum(1 for f in kb.files if f.is_embedded),
+        "file_count": len(kb.files),
         "files": [
             {
-                "id": f.id, 
-                "name": f.name, 
-                "file_type": f.file_type, 
-                "content_url": f.content_url, 
+                "id": f.id,
+                "name": f.name,
+                "file_type": f.file_type,
+                "content_url": f.content_url,
                 "size_bytes": f.size_bytes,
                 "token_count": f.token_count,
                 "chunks_count": f.chunks_count,
@@ -951,6 +972,7 @@ async def get_kb(kb_id: str):
             } for f in kb.files
         ],
         "config": kb.config,
+        "vector_db": kb.config.get("vectorDb", "chroma"),
         "graph_status": get_graph_status(kb_id) if kb.kb_type == "graphrag" else None,
         "created_at": kb.created_at,
         "updated_at": kb.updated_at,
@@ -993,7 +1015,16 @@ async def update_kb(kb_id: str, req: KBUpdate):
         "chunk_size": kb.chunk_size,
         "chunk_overlap": kb.chunk_overlap,
         "config": kb.config,
+        "vector_db": kb.config.get("vectorDb", "chroma"),
         "file_count": len(kb.files),
+        "embedded_count": sum(1 for f in kb.files if f.is_embedded),
+        "total_tokens": kb.total_tokens or sum(f.token_count for f in kb.files),
+        "total_chunks": kb.total_chunks or sum(f.chunks_count for f in kb.files),
+        "total_size_bytes": kb.total_size_bytes or sum(f.size_bytes for f in kb.files),
+        "storage_path": kb.storage_path,
+        "embedding_model": kb.embedding_model,
+        "embedding_dimensions": kb.embedding_dimensions,
+        "last_embedded_at": kb.last_embedded_at,
         "created_at": kb.created_at,
         "updated_at": kb.updated_at
     }
@@ -1004,7 +1035,7 @@ async def delete_kb(kb_id: str):
     """Delete a knowledge base."""
     success = delete_knowledge_base(kb_id)
     delete_graph(kb_id)
-    delete_vectorstore(kb_id)
+    await delete_vectorstore(kb_id)
     return {"status": "ok" if success else "not_found"}
 
 
@@ -1099,6 +1130,24 @@ async def get_kb_graph_progress(kb_id: str):
         "status": status,
         "progress": progress,
     }
+
+
+@app.get("/api/qdrant/status")
+async def qdrant_status():
+    """Check Qdrant connection status."""
+    if "qdrant" not in list_backends():
+        return {"available": False, "error": "qdrant-client not installed"}
+    try:
+        from vector_stores.qdrant_adapter import _get_qdrant_client
+        client = _get_qdrant_client()
+        collections = client.get_collections()
+        return {
+            "available": True,
+            "collections_count": len(collections.collections),
+            "backends": list_backends(),
+        }
+    except Exception as e:
+        return {"available": False, "error": str(e), "backends": list_backends()}
 
 
 @app.get("/api/knowledge/{kb_id}/graph")
@@ -1350,6 +1399,10 @@ async def embed_kb(kb_id: str, file_id: str = None, source_id: str = None):
         
         kb.embedding_model = embedding_model
         kb.embedding_dimensions = dimensions
+        kb.last_embedded_at = time.time()
+        kb.total_tokens = sum(f.token_count for f in kb.files)
+        kb.total_chunks = sum(f.chunks_count for f in kb.files)
+        kb.total_size_bytes = sum(f.size_bytes for f in kb.files)
         kb.updated_at = time.time()
         update_knowledge_base(kb)
         
@@ -1361,7 +1414,7 @@ async def embed_kb(kb_id: str, file_id: str = None, source_id: str = None):
 @app.get("/api/knowledge/{kb_id}/embeddings")
 async def list_kb_embeddings(kb_id: str):
     """List all stored embeddings/chunks for a KB."""
-    items = get_kb_embeddings(kb_id)
+    items = await get_kb_embeddings(kb_id)
     return {"embeddings": items}
 
 
@@ -1403,8 +1456,8 @@ async def sync_source(kb_id: str, source_id: str):
         if old_file_ids:
             kb.files = [f for f in kb.files if f.metadata.get("source_id") != source_id]
             update_knowledge_base(kb)
-        delete_source_chunks(kb_id, source_id)
-        
+        await delete_source_chunks(kb_id, source_id)
+
         # Add fetched content as files to the KB
         files_added = 0
         total_chunks = 0
@@ -1492,7 +1545,7 @@ async def delete_source(kb_id: str, source_id: str):
         return JSONResponse({"error": "Source not found"}, status_code=404)
 
     removed_file_ids = remove_files_by_source(kb_id, source_id)
-    delete_source_chunks(kb_id, source_id)
+    await delete_source_chunks(kb_id, source_id)
 
     kb = get_knowledge_base(kb_id)
     kb.config["sources"] = [s for s in sources if s.get("id") != source_id]
@@ -2708,8 +2761,10 @@ async def api_get_tools():
         ]
     }
 
-# Register CIO Agent routes
-register_cio_agent_routes(app)
+# Register CIO Agent routes (only when CIO_AGENT_URL is configured)
+cio_agent_url = os.environ.get("CIO_AGENT_URL", "")
+if cio_agent_url:
+    register_cio_agent_proxy_routes(app, cio_agent_url, provider_config=None)
 
 
 if __name__ == "__main__":
